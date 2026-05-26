@@ -1,0 +1,1059 @@
+//@version=6
+// Yagami Momentum Matrix -- 5x Slow Stoch + 5x RSI + TTM Squeeze
+//
+// README:
+// - Add this indicator to a lower pane.
+// - Use the module toggles to mix Slow Stochastic, RSI, and TTM Squeeze layers.
+// - Enable "Use real OHLC" when synthetic chart types should reference the underlying symbol's real bars.
+// - Presets are soft overrides because Pine cannot mutate saved input defaults after load.
+//
+// Changelog:
+// - 2026-05-15: Initial legendary multi Stoch/RSI/TTM Squeeze build.
+indicator("Yagami Momentum Matrix -- 5x Slow Stoch + 5x RSI + TTM Squeeze", "YMM Stoch/RSI/Squeeze", overlay = false, max_labels_count = 500, max_lines_count = 500, dynamic_requests = true)
+
+// -----------------------------------------------------------------------------
+// 2. Global constants
+// -----------------------------------------------------------------------------
+const string SRC_GLOBAL = "Global source"
+const string SRC_CLOSE = "Close"
+const string SRC_HL2 = "HL2"
+const string SRC_HLC3 = "HLC3"
+const string SRC_OHLC4 = "OHLC4"
+const string SRC_CUSTOM = "Custom"
+
+const string ST_OHLC_GLOBAL = "Global OHLC"
+const string ST_OHLC_MODULE = "Module timeframe OHLC"
+const string ST_OHLC_REAL = "Real OHLC if global real OHLC is enabled"
+
+const string MA_SMA = "SMA"
+const string MA_EMA = "EMA"
+const string MA_RMA = "RMA"
+const string MA_SMMA = "SMMA"
+const string MA_WMA = "WMA"
+const string MA_VWMA = "VWMA"
+const string MA_HMA = "HMA"
+
+const string COLOR_STATIC = "Static"
+const string COLOR_SLOPE = "Color by slope"
+const string COLOR_ZONE = "Color by zone"
+const string COLOR_REF = "Color by K above/below D"
+const string COLOR_RSI_REF = "Color by RSI above/below signal"
+
+const string LEVEL_8020 = "80/20"
+const string LEVEL_7525 = "75/25"
+const string LEVEL_7030 = "70/30"
+const string LEVEL_CUSTOM = "Custom"
+
+const string PRESET_CUSTOM = "Custom"
+const string PRESET_CLASSIC = "Classic Stoch + RSI"
+const string PRESET_SCALP = "Fast scalping"
+const string PRESET_SWING = "Slow swing"
+const string PRESET_SQUEEZE = "Squeeze breakout"
+const string PRESET_MINIMAL = "Minimal clean"
+
+const string MOMENTUM_LAZYBEAR = "LazyBear LR"
+const string MOMENTUM_ROC = "ROC"
+const string MOMENTUM_DIFF_MA = "Diff from MA"
+
+const string H_SCALE_RAW = "Raw"
+const string H_SCALE_CENTER = "Scaled to -50 to +50 around 50 baseline"
+const string H_SCALE_AUTO = "Auto normalize to 0-100"
+const string H_SCALE_FIXED = "Fixed multiplier mode"
+
+const string H_PLACE_CENTER = "Centered on 50"
+const string H_PLACE_LOWER = "Lower band around 0-25"
+const string H_PLACE_UPPER = "Upper band around 75-100"
+const string H_PLACE_RAW = "Raw separate scale"
+
+const string TTF_CHART = "Chart timeframe"
+const string TTF_HIGHER = "Higher timeframe"
+const string TTF_BOTH = "Both aligned"
+
+// -----------------------------------------------------------------------------
+// 3. Helper functions
+// -----------------------------------------------------------------------------
+var string tableTextSize = size.tiny
+
+f_safe_divide(numerator, denominator, fallback) =>
+    na(denominator) or denominator == 0.0 ? fallback : numerator / denominator
+
+f_clamp(value, minValue, maxValue) =>
+    math.max(minValue, math.min(maxValue, value))
+
+f_ma(src, len, maType) =>
+    int l = math.max(len, 1)
+    switch maType
+        MA_SMA => ta.sma(src, l)
+        MA_EMA => ta.ema(src, l)
+        MA_RMA => ta.rma(src, l)
+        MA_SMMA => ta.rma(src, l)
+        MA_WMA => ta.wma(src, l)
+        MA_VWMA => ta.vwma(src, l)
+        MA_HMA =>
+            int halfLen = math.max(1, int(math.floor(l / 2.0)))
+            int sqrtLen = math.max(1, int(math.round(math.sqrt(l))))
+            ta.wma(2.0 * ta.wma(src, halfLen) - ta.wma(src, l), sqrtLen)
+        => ta.sma(src, l)
+
+f_normalize(src, mode, minVal, maxVal) =>
+    float normRange = math.max(maxVal - minVal, 1e-10)
+    switch mode
+        H_SCALE_RAW => src
+        H_SCALE_AUTO => f_clamp(100.0 * (src - minVal) / normRange, 0.0, 100.0)
+        H_SCALE_CENTER => f_clamp(100.0 * (src - minVal) / normRange - 50.0, -50.0, 50.0)
+        => src
+
+f_color_by_slope_or_zone(baseColor, value, prevValue, upper, lower, refValue, mode, zoneUpperColor, zoneLowerColor, neutralColor) =>
+    switch mode
+        COLOR_STATIC => baseColor
+        COLOR_SLOPE => value >= prevValue ? baseColor : color.new(baseColor, 35)
+        COLOR_ZONE => value >= upper ? zoneUpperColor : value <= lower ? zoneLowerColor : neutralColor
+        COLOR_REF => value >= refValue ? baseColor : color.new(baseColor, 45)
+        COLOR_RSI_REF => value >= refValue ? baseColor : color.new(baseColor, 45)
+        => baseColor
+
+f_symbol(useReal) =>
+    useReal ? ticker.new(syminfo.prefix, syminfo.ticker) : syminfo.tickerid
+
+f_resolve_tf(moduleTf, globalTf, useGlobalTf) =>
+    string tfChoice = useGlobalTf ? globalTf : moduleTf
+    tfChoice == "" ? timeframe.period : tfChoice
+
+f_source_expr(sourceKind, customSource) =>
+    switch sourceKind
+        SRC_CLOSE => close
+        SRC_HL2 => hl2
+        SRC_HLC3 => hlc3
+        SRC_OHLC4 => ohlc4
+        SRC_CUSTOM => customSource
+        => close
+
+f_requested_source(moduleTf, globalTf, sourceMode, globalSourceKind, globalCustomSource, moduleCustomSource, useReal, allowLookahead) =>
+    string tfUse = sourceMode == SRC_GLOBAL ? f_resolve_tf(moduleTf, globalTf, true) : f_resolve_tf(moduleTf, globalTf, false)
+    string kindUse = sourceMode == SRC_GLOBAL ? globalSourceKind : sourceMode
+    float customUse = sourceMode == SRC_GLOBAL ? globalCustomSource : moduleCustomSource
+    float expr = f_source_expr(kindUse, customUse)
+    string symbolUse = f_symbol(useReal)
+    bool needsRequest = useReal or tfUse != timeframe.period
+    needsRequest ? request.security(symbol = symbolUse, timeframe = tfUse, expression = expr, gaps = barmerge.gaps_off, lookahead = allowLookahead ? barmerge.lookahead_on : barmerge.lookahead_off) : expr
+
+f_requested_ohlc(moduleTf, globalTf, sourceMode, useReal, allowLookahead) =>
+    string tfUse = sourceMode == ST_OHLC_GLOBAL ? f_resolve_tf(moduleTf, globalTf, true) : f_resolve_tf(moduleTf, globalTf, false)
+    string symbolUse = f_symbol(useReal)
+    bool needsRequest = useReal or tfUse != timeframe.period
+    if needsRequest
+        request.security(symbol = symbolUse, timeframe = tfUse, expression = [open, high, low, close], gaps = barmerge.gaps_off, lookahead = allowLookahead ? barmerge.lookahead_on : barmerge.lookahead_off)
+    else
+        [open, high, low, close]
+
+f_slow_stoch(srcHigh, srcLow, srcClose, length, smoothK, smoothD, maTypeK, maTypeD) =>
+    float lowestLow = ta.lowest(srcLow, length)
+    float highestHigh = ta.highest(srcHigh, length)
+    float rawK = 100.0 * f_safe_divide(srcClose - lowestLow, highestHigh - lowestLow, 0.0)
+    float k = f_ma(rawK, smoothK, maTypeK)
+    float d = f_ma(k, smoothD, maTypeD)
+    [k, d, rawK]
+
+f_rsi(src, length, smoothType, smoothLength) =>
+    float base = ta.rsi(src, length)
+    float smoothed = smoothLength > 1 ? f_ma(base, smoothLength, smoothType) : base
+    smoothed
+
+f_ttm_squeeze(src, srcHigh, srcLow, srcClose, bbLen, bbMult, bbMaType, kcLen, kcMult, kcMaType, useTrueRange, momentumLen, momentumSmooth, momentumSmoothType, momentumMode) =>
+    float bbBasis = f_ma(src, bbLen, bbMaType)
+    float bbDev = bbMult * ta.stdev(src, bbLen)
+    float upperBB = bbBasis + bbDev
+    float lowerBB = bbBasis - bbDev
+
+    float kcBasis = f_ma(src, kcLen, kcMaType)
+    float rangeSrc = useTrueRange ? ta.tr(true) : srcHigh - srcLow
+    float rangeMA = f_ma(rangeSrc, kcLen, kcMaType)
+    float upperKC = kcBasis + rangeMA * kcMult
+    float lowerKC = kcBasis - rangeMA * kcMult
+
+    bool squeezeOn = lowerBB > lowerKC and upperBB < upperKC
+    bool squeezeOff = lowerBB < lowerKC and upperBB > upperKC
+    bool noSqueeze = not squeezeOn and not squeezeOff
+
+    float avgHLCS = (ta.highest(srcHigh, momentumLen) + ta.lowest(srcLow, momentumLen) + ta.sma(srcClose, momentumLen)) / 3.0
+    float lazyBear = ta.linreg(srcClose - avgHLCS, momentumLen, 0)
+    float rocMode = ta.roc(srcClose, momentumLen)
+    float diffMaMode = srcClose - f_ma(src, momentumLen, momentumSmoothType)
+    float momentumRaw = switch momentumMode
+        MOMENTUM_ROC => rocMode
+        MOMENTUM_DIFF_MA => diffMaMode
+        => lazyBear
+    float momentumSmoothOut = momentumSmooth > 1 ? f_ma(momentumRaw, momentumSmooth, momentumSmoothType) : momentumRaw
+    float bbWidth = upperBB - lowerBB
+    float kcWidth = upperKC - lowerKC
+    [squeezeOn, squeezeOff, noSqueeze, momentumRaw, momentumSmoothOut, bbWidth, kcWidth, bbBasis, upperBB, lowerBB, upperKC, lowerKC]
+
+f_state_color(state, active) =>
+    color base = switch state
+        "OB" => color.red
+        "OS" => color.lime
+        "Bull" => color.teal
+        "Bear" => color.maroon
+        "Bull Cross" => color.green
+        "Bear Cross" => color.red
+        "Squeeze On" => color.orange
+        "Squeeze Off" => color.aqua
+        "No Squeeze" => color.silver
+        "Fired Bull" => color.green
+        "Fired Bear" => color.red
+        "Strong Bull" => color.lime
+        "Strong Bear" => color.red
+        "OFF" => color.gray
+        "Neutral" => color.gray
+        => color.gray
+    active ? color.new(base, 0) : color.new(base, 65)
+
+f_fmt_num(value) =>
+    na(value) ? "-" : str.tostring(value, "#.##")
+
+f_fmt_int(value) =>
+    na(value) ? "-" : str.tostring(value)
+
+f_cross_text(up, down) =>
+    up ? "BULL" : down ? "BEAR" : "-"
+
+f_update_last_label(array<label> labelArr, int idx, bool show, float y, string txt, color txtColor, color bgColor) =>
+    label lbl = array.get(labelArr, idx)
+    if show and not na(y)
+        if na(lbl)
+            lbl := label.new(bar_index, y, txt, xloc = xloc.bar_index, yloc = yloc.price, style = label.style_label_right, color = bgColor, textcolor = txtColor, size = size.tiny)
+            array.set(labelArr, idx, lbl)
+        else
+            label.set_xy(lbl, bar_index, y)
+            label.set_text(lbl, txt)
+            label.set_textcolor(lbl, txtColor)
+            label.set_color(lbl, bgColor)
+    else if not na(lbl)
+        label.delete(lbl)
+        array.set(labelArr, idx, na)
+
+f_table_cell(tableId, col, row, txt, txtColor, bgColor) =>
+    table.cell(tableId, col, row, txt, text_color = txtColor, bgcolor = bgColor, text_halign = text.align_left, text_size = tableTextSize)
+
+f_write_row(tableId, row, name, primary, secondary, state, cross, extra, active, dimInactive) =>
+    color textColor = active ? chart.fg_color : color.new(chart.fg_color, dimInactive ? 55 : 25)
+    color rowColor = f_state_color(state, active)
+    f_table_cell(tableId, 0, row, name, textColor, rowColor)
+    f_table_cell(tableId, 1, row, primary, textColor, rowColor)
+    f_table_cell(tableId, 2, row, secondary, textColor, rowColor)
+    f_table_cell(tableId, 3, row, state, textColor, rowColor)
+    f_table_cell(tableId, 4, row, cross, textColor, rowColor)
+    f_table_cell(tableId, 5, row, extra, textColor, rowColor)
+
+f_blank_row(tableId, row) =>
+    color blankBg = color.new(color.black, 100)
+    color blankText = color.new(chart.fg_color, 100)
+    f_table_cell(tableId, 0, row, "", blankText, blankBg)
+    f_table_cell(tableId, 1, row, "", blankText, blankBg)
+    f_table_cell(tableId, 2, row, "", blankText, blankBg)
+    f_table_cell(tableId, 3, row, "", blankText, blankBg)
+    f_table_cell(tableId, 4, row, "", blankText, blankBg)
+    f_table_cell(tableId, 5, row, "", blankText, blankBg)
+
+f_emit_signal_label(show, condition, y, txt, isUp, bgColor, txtColor) =>
+    if show and condition and not na(y)
+        label.new(bar_index, y, txt, xloc = xloc.bar_index, yloc = yloc.price, style = isUp ? label.style_label_up : label.style_label_down, color = bgColor, textcolor = txtColor, size = size.tiny)
+
+f_calc_stoch(enabled, moduleTf, sourceMode, length, smoothK, smoothD, maTypeK, maTypeD, upper, lower, mid, colorMode, baseKColor, baseDColor, fillBaseColor, lineTransp, fillTransp, globalTf, useReal, allowLookahead, minimalModeFlag) =>
+    if enabled
+        [_, srcHigh, srcLow, srcClose] = f_requested_ohlc(moduleTf, globalTf, sourceMode, sourceMode == ST_OHLC_REAL ? useReal : false, allowLookahead)
+        [k, d, rawK] = f_slow_stoch(srcHigh, srcLow, srcClose, length, smoothK, smoothD, maTypeK, maTypeD)
+        bool crossUp = ta.crossover(k, d)
+        bool crossDown = ta.crossunder(k, d)
+        bool exitOS = ta.crossover(k, lower)
+        bool exitOB = ta.crossunder(k, upper)
+        bool bullSignal = k > d or exitOS or ta.crossover(k, mid)
+        bool bearSignal = k < d or exitOB or ta.crossunder(k, mid)
+        string state = k >= upper ? "OB" : k <= lower ? "OS" : k > d ? "Bull" : k < d ? "Bear" : "Neutral"
+        color kDyn = f_color_by_slope_or_zone(baseKColor, k, nz(k[1], k), upper, lower, d, colorMode, color.red, color.lime, baseKColor)
+        color dDyn = f_color_by_slope_or_zone(baseDColor, d, nz(d[1], d), upper, lower, k, colorMode, color.red, color.lime, baseDColor)
+        color fillDyn = color.new(fillBaseColor, fillTransp)
+        color bgDyn = minimalModeFlag ? na : state == "OB" ? color.new(color.red, 92) : state == "OS" ? color.new(color.lime, 92) : na
+        [k, d, rawK, state, bullSignal, bearSignal, crossUp, crossDown, exitOS, exitOB, color.new(kDyn, lineTransp), color.new(dDyn, lineTransp), fillDyn, bgDyn]
+    else
+        [na, na, na, "OFF", false, false, false, false, false, false, color.new(baseKColor, 100), color.new(baseDColor, 100), color.new(fillBaseColor, 100), na]
+
+f_calc_rsi(enabled, moduleTf, sourceMode, sourceCustom, length, smoothEnabled, smoothLength, smoothType, signalEnabled, signalLength, signalType, upper, lower, mid, extremeUpper, extremeLower, colorMode, baseRsiColor, baseSignalColor, fillBaseColor, lineTransp, fillTransp, globalTf, globalSourceKind, globalCustomSource, useReal, allowLookahead, minimalModeFlag) =>
+    if enabled
+        float src = f_requested_source(moduleTf, globalTf, sourceMode, globalSourceKind, globalCustomSource, sourceCustom, useReal, allowLookahead)
+        float baseRsi = ta.rsi(src, length)
+        float rsi = smoothEnabled ? f_rsi(src, length, smoothType, smoothLength) : baseRsi
+        float signal = signalEnabled ? f_ma(rsi, signalLength, signalType) : na
+        bool crossAboveSignal = signalEnabled and ta.crossover(rsi, signal)
+        bool crossBelowSignal = signalEnabled and ta.crossunder(rsi, signal)
+        bool crossAboveLower = ta.crossover(rsi, lower)
+        bool crossBelowUpper = ta.crossunder(rsi, upper)
+        bool crossAboveMid = ta.crossover(rsi, mid)
+        bool crossBelowMid = ta.crossunder(rsi, mid)
+        bool enterOB = ta.crossover(rsi, upper)
+        bool exitOB = ta.crossunder(rsi, upper)
+        bool enterOS = ta.crossunder(rsi, lower)
+        bool exitOS = ta.crossover(rsi, lower)
+        bool bullSignal = signalEnabled ? (rsi > signal or crossAboveMid or crossAboveLower) : (rsi > mid or crossAboveMid or crossAboveLower)
+        bool bearSignal = signalEnabled ? (rsi < signal or crossBelowMid or crossBelowUpper) : (rsi < mid or crossBelowMid or crossBelowUpper)
+        string state = rsi >= extremeUpper ? "OB" : rsi <= extremeLower ? "OS" : signalEnabled and rsi > signal ? "Bull" : signalEnabled and rsi < signal ? "Bear" : rsi >= mid ? "Bull" : "Bear"
+        float colorRef = signalEnabled ? signal : rsi
+        float colorRefPrev = signalEnabled ? nz(signal[1], signal) : nz(rsi[1], rsi)
+        color rsiDyn = f_color_by_slope_or_zone(baseRsiColor, rsi, nz(rsi[1], rsi), upper, lower, colorRef, colorMode, color.red, color.lime, baseRsiColor)
+        color sigDyn = f_color_by_slope_or_zone(baseSignalColor, nz(signal, rsi), colorRefPrev, upper, lower, rsi, colorMode, color.red, color.lime, baseSignalColor)
+        color fillDyn = color.new(fillBaseColor, fillTransp)
+        color bgDyn = minimalModeFlag ? na : rsi >= extremeUpper ? color.new(color.red, 92) : rsi <= extremeLower ? color.new(color.lime, 92) : rsi >= upper ? color.new(color.red, 95) : rsi <= lower ? color.new(color.lime, 95) : na
+        [rsi, signal, state, bullSignal, bearSignal, crossAboveSignal, crossBelowSignal, crossAboveLower, crossBelowUpper, crossAboveMid, crossBelowMid, enterOB, exitOB, enterOS, exitOS, color.new(rsiDyn, lineTransp), color.new(sigDyn, lineTransp), fillDyn, bgDyn]
+    else
+        [na, na, "OFF", false, false, false, false, false, false, false, false, false, false, false, false, color.new(baseRsiColor, 100), color.new(baseSignalColor, 100), color.new(fillBaseColor, 100), na]
+
+f_calc_ttm(enabled, moduleTf, sourceMode, sourceCustom, bbLen, bbMult, bbMaType, kcLen, kcMult, kcMaType, useTrueRange, momentumLen, momentumSmooth, momentumSmoothType, momentumMode, histScalingMode, histMultiplier, baseline, placement, globalTf, globalSourceKind, globalCustomSource, useReal, allowLookahead) =>
+    if enabled
+        float src = f_requested_source(moduleTf, globalTf, sourceMode, globalSourceKind, globalCustomSource, sourceCustom, useReal, allowLookahead)
+        string ttmOhlcMode = sourceMode == SRC_GLOBAL ? ST_OHLC_GLOBAL : ST_OHLC_MODULE
+        [_, srcHigh, srcLow, srcClose] = f_requested_ohlc(moduleTf, globalTf, ttmOhlcMode, useReal, allowLookahead)
+        [squeezeOn, squeezeOff, noSqueeze, momentumRaw, momentumSmoothValue, bbWidth, kcWidth, bbBasis, upperBB, lowerBB, upperKC, lowerKC] = f_ttm_squeeze(src, srcHigh, srcLow, srcClose, bbLen, bbMult, bbMaType, kcLen, kcMult, kcMaType, useTrueRange, momentumLen, momentumSmooth, momentumSmoothType, momentumMode)
+        [squeezeOn, squeezeOff, noSqueeze, momentumRaw, momentumSmoothValue, bbWidth, kcWidth, bbBasis, upperBB, lowerBB, upperKC, lowerKC]
+    else
+        [false, false, false, na, na, na, na, na, na, na, na, na]
+
+f_ttm_display(momentumSmoothValue, momentumLen, histScalingMode, histMultiplier, baseline, placement) =>
+    float histAutoLow = ta.lowest(momentumSmoothValue, math.max(5, momentumLen * 2))
+    float histAutoHigh = ta.highest(momentumSmoothValue, math.max(5, momentumLen * 2))
+    float histNormalized = f_normalize(momentumSmoothValue, H_SCALE_AUTO, histAutoLow, histAutoHigh)
+    float histSeries = switch histScalingMode
+        H_SCALE_RAW => momentumSmoothValue
+        H_SCALE_CENTER => baseline + f_clamp(momentumSmoothValue * histMultiplier, -50.0, 50.0)
+        H_SCALE_AUTO => histNormalized
+        H_SCALE_FIXED => baseline + momentumSmoothValue * histMultiplier
+        => baseline + momentumSmoothValue * histMultiplier
+    float placementOffset = switch placement
+        H_PLACE_CENTER => 0.0
+        H_PLACE_LOWER => -37.5
+        H_PLACE_UPPER => 37.5
+        H_PLACE_RAW => 0.0
+        => 0.0
+    float histPlot = histSeries + placementOffset
+    float dotY = switch placement
+        H_PLACE_LOWER => 12.5
+        H_PLACE_UPPER => 87.5
+        H_PLACE_RAW => baseline
+        => baseline
+    [histPlot, dotY]
+
+// -----------------------------------------------------------------------------
+// 4. Global source / timeframe inputs
+// -----------------------------------------------------------------------------
+sourceGroup = "Source / Timeframe"
+globalSourceKind = input.string(SRC_CLOSE, "Global source", options = [SRC_CLOSE, SRC_HL2, SRC_HLC3, SRC_OHLC4, SRC_CUSTOM], group = sourceGroup, inline = "gsrc")
+globalCustomSource = input.source(close, "Global custom source", group = sourceGroup, inline = "gsrc")
+globalTimeframeOverride = input.timeframe("", "Global timeframe override; blank = chart timeframe", group = sourceGroup)
+useRealOhlc = input.bool(false, "Use real OHLC on synthetic charts", group = sourceGroup)
+allowLookaheadTest = input.bool(false, "Advanced: allow lookahead for testing only", group = sourceGroup, tooltip = "Testing only. This can repaint because it allows future values in security requests.")
+
+// -----------------------------------------------------------------------------
+// 5. Global visual / level inputs
+// -----------------------------------------------------------------------------
+visualGroup = "Levels / Grid"
+presetMode = input.string(PRESET_CUSTOM, "Preset mode", options = [PRESET_CUSTOM, PRESET_CLASSIC, PRESET_SCALP, PRESET_SWING, PRESET_SQUEEZE, PRESET_MINIMAL], group = visualGroup)
+minimalMode = input.bool(false, "Minimal / Clean Mode", group = visualGroup)
+diagnosticMode = input.bool(false, "Diagnostic Mode", group = visualGroup)
+showTable = input.bool(true, "Show dashboard table", group = visualGroup)
+showOnlyActiveModules = input.bool(true, "Show only active modules in table", group = visualGroup)
+dimInactiveModules = input.bool(true, "Dim inactive modules", group = visualGroup)
+showRightLabels = input.bool(false, "Show last-value labels on the right", group = visualGroup)
+highlightConsensus = input.bool(false, "Highlight strongest oscillator consensus", group = visualGroup)
+
+showGlobalLevels = input.bool(true, "Show global levels", group = visualGroup, inline = "lvl1")
+globalLevelPreset = input.string(LEVEL_7525, "Preset", options = [LEVEL_8020, LEVEL_7525, LEVEL_7030, LEVEL_CUSTOM], group = visualGroup, inline = "lvl1")
+globalUpperLevelInput = input.float(75.0, "Upper", minval = 0, maxval = 100, group = visualGroup, inline = "lvl2")
+globalMiddleLevelInput = input.float(50.0, "Middle", minval = 0, maxval = 100, group = visualGroup, inline = "lvl2")
+globalLowerLevelInput = input.float(25.0, "Lower", minval = 0, maxval = 100, group = visualGroup, inline = "lvl2")
+showObZone = input.bool(true, "Show overbought zone", group = visualGroup, inline = "lvl3")
+showNeutralZone = input.bool(true, "Show neutral zone", group = visualGroup, inline = "lvl3")
+showOsZone = input.bool(true, "Show oversold zone", group = visualGroup, inline = "lvl3")
+levelUpperColor = input.color(color.new(color.red, 0), "Upper line color", group = visualGroup, inline = "lvl4")
+levelMiddleColor = input.color(color.new(color.gray, 0), "Middle line color", group = visualGroup, inline = "lvl4")
+levelLowerColor = input.color(color.new(color.lime, 0), "Lower line color", group = visualGroup, inline = "lvl4")
+levelLineTransp = input.int(20, "Line transparency", minval = 0, maxval = 100, group = visualGroup, inline = "lvl5")
+obZoneColor = input.color(color.new(color.red, 0), "OB zone", group = visualGroup, inline = "lvl5")
+neutralZoneColor = input.color(color.new(color.gray, 0), "Neutral zone", group = visualGroup, inline = "lvl5")
+osZoneColor = input.color(color.new(color.lime, 0), "OS zone", group = visualGroup, inline = "lvl5")
+zoneFillTransp = input.int(92, "Zone transparency", minval = 0, maxval = 100, group = visualGroup, inline = "lvl6")
+
+masterGroup = "Master Toggles"
+enableStochastics = input.bool(true, "Enable Stochastics", group = masterGroup)
+enableRsis = input.bool(true, "Enable RSIs", group = masterGroup)
+enableTtmSqueeze = input.bool(true, "Enable TTM Squeeze", group = masterGroup)
+
+// -----------------------------------------------------------------------------
+// 6. Slow Stochastic inputs
+// -----------------------------------------------------------------------------
+stoch1Group = "Stoch 1"
+stoch1Enable = input.bool(true, "Enable", group = stoch1Group, inline = "s1a")
+stoch1Timeframe = input.timeframe("", "Timeframe", group = stoch1Group, inline = "s1a")
+stoch1SourceMode = input.string(ST_OHLC_GLOBAL, "Source mode", options = [ST_OHLC_GLOBAL, ST_OHLC_MODULE, ST_OHLC_REAL], group = stoch1Group)
+stoch1Length = input.int(10, "Length", minval = 1, group = stoch1Group, inline = "s1b")
+stoch1SmoothK = input.int(6, "Smooth K", minval = 1, group = stoch1Group, inline = "s1b")
+stoch1SmoothD = input.int(3, "Smooth D", minval = 1, group = stoch1Group, inline = "s1b")
+stoch1KMaType = input.string(MA_SMA, "K MA", options = [MA_SMA, MA_EMA, MA_RMA, MA_SMMA, MA_WMA, MA_VWMA, MA_HMA], group = stoch1Group, inline = "s1c")
+stoch1DMaType = input.string(MA_SMA, "D MA", options = [MA_SMA, MA_EMA, MA_RMA, MA_SMMA, MA_WMA, MA_VWMA, MA_HMA], group = stoch1Group, inline = "s1c")
+stoch1Upper = input.float(75.0, "Upper", minval = 0, maxval = 100, group = stoch1Group, inline = "s1d")
+stoch1Lower = input.float(25.0, "Lower", minval = 0, maxval = 100, group = stoch1Group, inline = "s1d")
+stoch1Mid = input.float(50.0, "Mid", minval = 0, maxval = 100, group = stoch1Group, inline = "s1d")
+stoch1PlotK = input.bool(true, "Plot K", group = stoch1Group, inline = "s1e")
+stoch1PlotD = input.bool(true, "Plot D", group = stoch1Group, inline = "s1e")
+stoch1ShowFill = input.bool(true, "Fill", group = stoch1Group, inline = "s1e")
+stoch1ShowMarkers = input.bool(true, "Markers", group = stoch1Group, inline = "s1f")
+stoch1ShowBg = input.bool(true, "BG", group = stoch1Group, inline = "s1f")
+stoch1ColorMode = input.string(COLOR_REF, "Color mode", options = [COLOR_STATIC, COLOR_SLOPE, COLOR_ZONE, COLOR_REF], group = stoch1Group)
+stoch1KColor = input.color(color.lime, "K color", group = stoch1Group, inline = "s1g")
+stoch1DColor = input.color(color.red, "D color", group = stoch1Group, inline = "s1g")
+stoch1FillColor = input.color(color.new(color.teal, 80), "Fill color", group = stoch1Group, inline = "s1g")
+stoch1KWidth = input.int(2, "K width", minval = 1, group = stoch1Group, inline = "s1h")
+stoch1DWidth = input.int(2, "D width", minval = 1, group = stoch1Group, inline = "s1h")
+stoch1LineTransp = input.int(0, "Line transp", minval = 0, maxval = 100, group = stoch1Group, inline = "s1h")
+stoch1FillTransp = input.int(80, "Fill transp", minval = 0, maxval = 100, group = stoch1Group, inline = "s1h")
+
+stoch2Group = "Stoch 2"
+stoch2Enable = input.bool(false, "Enable", group = stoch2Group, inline = "s2a")
+stoch2Timeframe = input.timeframe("", "Timeframe", group = stoch2Group, inline = "s2a")
+stoch2SourceMode = input.string(ST_OHLC_GLOBAL, "Source mode", options = [ST_OHLC_GLOBAL, ST_OHLC_MODULE, ST_OHLC_REAL], group = stoch2Group)
+stoch2Length = input.int(10, "Length", minval = 1, group = stoch2Group, inline = "s2b")
+stoch2SmoothK = input.int(6, "Smooth K", minval = 1, group = stoch2Group, inline = "s2b")
+stoch2SmoothD = input.int(3, "Smooth D", minval = 1, group = stoch2Group, inline = "s2b")
+stoch2KMaType = input.string(MA_SMA, "K MA", options = [MA_SMA, MA_EMA, MA_RMA, MA_SMMA, MA_WMA, MA_VWMA, MA_HMA], group = stoch2Group, inline = "s2c")
+stoch2DMaType = input.string(MA_SMA, "D MA", options = [MA_SMA, MA_EMA, MA_RMA, MA_SMMA, MA_WMA, MA_VWMA, MA_HMA], group = stoch2Group, inline = "s2c")
+stoch2Upper = input.float(75.0, "Upper", minval = 0, maxval = 100, group = stoch2Group, inline = "s2d")
+stoch2Lower = input.float(25.0, "Lower", minval = 0, maxval = 100, group = stoch2Group, inline = "s2d")
+stoch2Mid = input.float(50.0, "Mid", minval = 0, maxval = 100, group = stoch2Group, inline = "s2d")
+stoch2PlotK = input.bool(true, "Plot K", group = stoch2Group, inline = "s2e")
+stoch2PlotD = input.bool(true, "Plot D", group = stoch2Group, inline = "s2e")
+stoch2ShowFill = input.bool(true, "Fill", group = stoch2Group, inline = "s2e")
+stoch2ShowMarkers = input.bool(true, "Markers", group = stoch2Group, inline = "s2f")
+stoch2ShowBg = input.bool(true, "BG", group = stoch2Group, inline = "s2f")
+stoch2ColorMode = input.string(COLOR_REF, "Color mode", options = [COLOR_STATIC, COLOR_SLOPE, COLOR_ZONE, COLOR_REF], group = stoch2Group)
+stoch2KColor = input.color(color.aqua, "K color", group = stoch2Group, inline = "s2g")
+stoch2DColor = input.color(color.orange, "D color", group = stoch2Group, inline = "s2g")
+stoch2FillColor = input.color(color.new(color.blue, 82), "Fill color", group = stoch2Group, inline = "s2g")
+stoch2KWidth = input.int(2, "K width", minval = 1, group = stoch2Group, inline = "s2h")
+stoch2DWidth = input.int(2, "D width", minval = 1, group = stoch2Group, inline = "s2h")
+stoch2LineTransp = input.int(0, "Line transp", minval = 0, maxval = 100, group = stoch2Group, inline = "s2h")
+stoch2FillTransp = input.int(82, "Fill transp", minval = 0, maxval = 100, group = stoch2Group, inline = "s2h")
+
+stoch3Group = "Stoch 3"
+stoch3Enable = input.bool(false, "Enable", group = stoch3Group, inline = "s3a")
+stoch3Timeframe = input.timeframe("", "Timeframe", group = stoch3Group, inline = "s3a")
+stoch3SourceMode = input.string(ST_OHLC_GLOBAL, "Source mode", options = [ST_OHLC_GLOBAL, ST_OHLC_MODULE, ST_OHLC_REAL], group = stoch3Group)
+stoch3Length = input.int(10, "Length", minval = 1, group = stoch3Group, inline = "s3b")
+stoch3SmoothK = input.int(6, "Smooth K", minval = 1, group = stoch3Group, inline = "s3b")
+stoch3SmoothD = input.int(3, "Smooth D", minval = 1, group = stoch3Group, inline = "s3b")
+stoch3KMaType = input.string(MA_SMA, "K MA", options = [MA_SMA, MA_EMA, MA_RMA, MA_SMMA, MA_WMA, MA_VWMA, MA_HMA], group = stoch3Group, inline = "s3c")
+stoch3DMaType = input.string(MA_SMA, "D MA", options = [MA_SMA, MA_EMA, MA_RMA, MA_SMMA, MA_WMA, MA_VWMA, MA_HMA], group = stoch3Group, inline = "s3c")
+stoch3Upper = input.float(75.0, "Upper", minval = 0, maxval = 100, group = stoch3Group, inline = "s3d")
+stoch3Lower = input.float(25.0, "Lower", minval = 0, maxval = 100, group = stoch3Group, inline = "s3d")
+stoch3Mid = input.float(50.0, "Mid", minval = 0, maxval = 100, group = stoch3Group, inline = "s3d")
+stoch3PlotK = input.bool(true, "Plot K", group = stoch3Group, inline = "s3e")
+stoch3PlotD = input.bool(true, "Plot D", group = stoch3Group, inline = "s3e")
+stoch3ShowFill = input.bool(true, "Fill", group = stoch3Group, inline = "s3e")
+stoch3ShowMarkers = input.bool(true, "Markers", group = stoch3Group, inline = "s3f")
+stoch3ShowBg = input.bool(true, "BG", group = stoch3Group, inline = "s3f")
+stoch3ColorMode = input.string(COLOR_REF, "Color mode", options = [COLOR_STATIC, COLOR_SLOPE, COLOR_ZONE, COLOR_REF], group = stoch3Group)
+stoch3KColor = input.color(color.fuchsia, "K color", group = stoch3Group, inline = "s3g")
+stoch3DColor = input.color(color.lime, "D color", group = stoch3Group, inline = "s3g")
+stoch3FillColor = input.color(color.new(color.purple, 82), "Fill color", group = stoch3Group, inline = "s3g")
+stoch3KWidth = input.int(2, "K width", minval = 1, group = stoch3Group, inline = "s3h")
+stoch3DWidth = input.int(2, "D width", minval = 1, group = stoch3Group, inline = "s3h")
+stoch3LineTransp = input.int(0, "Line transp", minval = 0, maxval = 100, group = stoch3Group, inline = "s3h")
+stoch3FillTransp = input.int(82, "Fill transp", minval = 0, maxval = 100, group = stoch3Group, inline = "s3h")
+
+stoch4Group = "Stoch 4"
+stoch4Enable = input.bool(false, "Enable", group = stoch4Group, inline = "s4a")
+stoch4Timeframe = input.timeframe("", "Timeframe", group = stoch4Group, inline = "s4a")
+stoch4SourceMode = input.string(ST_OHLC_GLOBAL, "Source mode", options = [ST_OHLC_GLOBAL, ST_OHLC_MODULE, ST_OHLC_REAL], group = stoch4Group)
+stoch4Length = input.int(10, "Length", minval = 1, group = stoch4Group, inline = "s4b")
+stoch4SmoothK = input.int(6, "Smooth K", minval = 1, group = stoch4Group, inline = "s4b")
+stoch4SmoothD = input.int(3, "Smooth D", minval = 1, group = stoch4Group, inline = "s4b")
+stoch4KMaType = input.string(MA_SMA, "K MA", options = [MA_SMA, MA_EMA, MA_RMA, MA_SMMA, MA_WMA, MA_VWMA, MA_HMA], group = stoch4Group, inline = "s4c")
+stoch4DMaType = input.string(MA_SMA, "D MA", options = [MA_SMA, MA_EMA, MA_RMA, MA_SMMA, MA_WMA, MA_VWMA, MA_HMA], group = stoch4Group, inline = "s4c")
+stoch4Upper = input.float(75.0, "Upper", minval = 0, maxval = 100, group = stoch4Group, inline = "s4d")
+stoch4Lower = input.float(25.0, "Lower", minval = 0, maxval = 100, group = stoch4Group, inline = "s4d")
+stoch4Mid = input.float(50.0, "Mid", minval = 0, maxval = 100, group = stoch4Group, inline = "s4d")
+stoch4PlotK = input.bool(true, "Plot K", group = stoch4Group, inline = "s4e")
+stoch4PlotD = input.bool(true, "Plot D", group = stoch4Group, inline = "s4e")
+stoch4ShowFill = input.bool(true, "Fill", group = stoch4Group, inline = "s4e")
+stoch4ShowMarkers = input.bool(true, "Markers", group = stoch4Group, inline = "s4f")
+stoch4ShowBg = input.bool(true, "BG", group = stoch4Group, inline = "s4f")
+stoch4ColorMode = input.string(COLOR_REF, "Color mode", options = [COLOR_STATIC, COLOR_SLOPE, COLOR_ZONE, COLOR_REF], group = stoch4Group)
+stoch4KColor = input.color(color.yellow, "K color", group = stoch4Group, inline = "s4g")
+stoch4DColor = input.color(color.orange, "D color", group = stoch4Group, inline = "s4g")
+stoch4FillColor = input.color(color.new(color.rgb(212, 175, 55), 82), "Fill color", group = stoch4Group, inline = "s4g")
+stoch4KWidth = input.int(2, "K width", minval = 1, group = stoch4Group, inline = "s4h")
+stoch4DWidth = input.int(2, "D width", minval = 1, group = stoch4Group, inline = "s4h")
+stoch4LineTransp = input.int(0, "Line transp", minval = 0, maxval = 100, group = stoch4Group, inline = "s4h")
+stoch4FillTransp = input.int(82, "Fill transp", minval = 0, maxval = 100, group = stoch4Group, inline = "s4h")
+
+stoch5Group = "Stoch 5"
+stoch5Enable = input.bool(false, "Enable", group = stoch5Group, inline = "s5a")
+stoch5Timeframe = input.timeframe("", "Timeframe", group = stoch5Group, inline = "s5a")
+stoch5SourceMode = input.string(ST_OHLC_GLOBAL, "Source mode", options = [ST_OHLC_GLOBAL, ST_OHLC_MODULE, ST_OHLC_REAL], group = stoch5Group)
+stoch5Length = input.int(10, "Length", minval = 1, group = stoch5Group, inline = "s5b")
+stoch5SmoothK = input.int(6, "Smooth K", minval = 1, group = stoch5Group, inline = "s5b")
+stoch5SmoothD = input.int(3, "Smooth D", minval = 1, group = stoch5Group, inline = "s5b")
+stoch5KMaType = input.string(MA_SMA, "K MA", options = [MA_SMA, MA_EMA, MA_RMA, MA_SMMA, MA_WMA, MA_VWMA, MA_HMA], group = stoch5Group, inline = "s5c")
+stoch5DMaType = input.string(MA_SMA, "D MA", options = [MA_SMA, MA_EMA, MA_RMA, MA_SMMA, MA_WMA, MA_VWMA, MA_HMA], group = stoch5Group, inline = "s5c")
+stoch5Upper = input.float(75.0, "Upper", minval = 0, maxval = 100, group = stoch5Group, inline = "s5d")
+stoch5Lower = input.float(25.0, "Lower", minval = 0, maxval = 100, group = stoch5Group, inline = "s5d")
+stoch5Mid = input.float(50.0, "Mid", minval = 0, maxval = 100, group = stoch5Group, inline = "s5d")
+stoch5PlotK = input.bool(true, "Plot K", group = stoch5Group, inline = "s5e")
+stoch5PlotD = input.bool(true, "Plot D", group = stoch5Group, inline = "s5e")
+stoch5ShowFill = input.bool(true, "Fill", group = stoch5Group, inline = "s5e")
+stoch5ShowMarkers = input.bool(true, "Markers", group = stoch5Group, inline = "s5f")
+stoch5ShowBg = input.bool(true, "BG", group = stoch5Group, inline = "s5f")
+stoch5ColorMode = input.string(COLOR_REF, "Color mode", options = [COLOR_STATIC, COLOR_SLOPE, COLOR_ZONE, COLOR_REF], group = stoch5Group)
+stoch5KColor = input.color(color.aqua, "K color", group = stoch5Group, inline = "s5g")
+stoch5DColor = input.color(color.rgb(255, 105, 180), "D color", group = stoch5Group, inline = "s5g")
+stoch5FillColor = input.color(color.new(color.teal, 82), "Fill color", group = stoch5Group, inline = "s5g")
+stoch5KWidth = input.int(2, "K width", minval = 1, group = stoch5Group, inline = "s5h")
+stoch5DWidth = input.int(2, "D width", minval = 1, group = stoch5Group, inline = "s5h")
+stoch5LineTransp = input.int(0, "Line transp", minval = 0, maxval = 100, group = stoch5Group, inline = "s5h")
+stoch5FillTransp = input.int(82, "Fill transp", minval = 0, maxval = 100, group = stoch5Group, inline = "s5h")
+
+// -----------------------------------------------------------------------------
+// 7. RSI inputs
+// -----------------------------------------------------------------------------
+rsi1Group = "RSI 1"
+rsi1Enable = input.bool(true, "Enable", group = rsi1Group, inline = "r1a")
+rsi1Timeframe = input.timeframe("", "Timeframe", group = rsi1Group, inline = "r1a")
+rsi1SourceMode = input.string(SRC_GLOBAL, "Source", options = [SRC_GLOBAL, SRC_CLOSE, SRC_HL2, SRC_HLC3, SRC_OHLC4, SRC_CUSTOM], group = rsi1Group)
+rsi1CustomSource = input.source(close, "Custom source", group = rsi1Group)
+rsi1Length = input.int(14, "Length", minval = 1, group = rsi1Group, inline = "r1b")
+rsi1SmoothEnabled = input.bool(true, "Smooth", group = rsi1Group, inline = "r1b")
+rsi1SmoothLength = input.int(5, "Smooth len", minval = 1, group = rsi1Group, inline = "r1b")
+rsi1SmoothType = input.string(MA_EMA, "Smooth MA", options = [MA_SMA, MA_EMA, MA_RMA, MA_SMMA, MA_WMA, MA_VWMA, MA_HMA], group = rsi1Group, inline = "r1b")
+rsi1SignalEnabled = input.bool(true, "Signal", group = rsi1Group, inline = "r1c")
+rsi1SignalLength = input.int(9, "Signal len", minval = 1, group = rsi1Group, inline = "r1c")
+rsi1SignalType = input.string(MA_EMA, "Signal MA", options = [MA_SMA, MA_EMA, MA_RMA, MA_SMMA, MA_WMA, MA_VWMA, MA_HMA], group = rsi1Group, inline = "r1c")
+rsi1Upper = input.float(70.0, "Upper", minval = 0, maxval = 100, group = rsi1Group, inline = "r1d")
+rsi1Lower = input.float(30.0, "Lower", minval = 0, maxval = 100, group = rsi1Group, inline = "r1d")
+rsi1Mid = input.float(50.0, "Mid", minval = 0, maxval = 100, group = rsi1Group, inline = "r1d")
+rsi1ExtremeUpper = input.float(80.0, "Extreme upper", minval = 0, maxval = 100, group = rsi1Group, inline = "r1e")
+rsi1ExtremeLower = input.float(20.0, "Extreme lower", minval = 0, maxval = 100, group = rsi1Group, inline = "r1e")
+rsi1Plot = input.bool(true, "Plot RSI", group = rsi1Group, inline = "r1f")
+rsi1PlotSignal = input.bool(true, "Signal", group = rsi1Group, inline = "r1f")
+rsi1ShowFill = input.bool(true, "Fill", group = rsi1Group, inline = "r1f")
+rsi1ShowMarkers = input.bool(true, "Markers", group = rsi1Group, inline = "r1g")
+rsi1ShowBg = input.bool(true, "BG", group = rsi1Group, inline = "r1g")
+rsi1ColorMode = input.string(COLOR_RSI_REF, "Color mode", options = [COLOR_STATIC, COLOR_SLOPE, COLOR_ZONE, COLOR_RSI_REF], group = rsi1Group)
+rsi1Color = input.color(color.aqua, "RSI color", group = rsi1Group, inline = "r1h")
+rsi1SignalColor = input.color(color.orange, "Signal color", group = rsi1Group, inline = "r1h")
+rsi1FillColor = input.color(color.new(color.blue, 82), "Fill color", group = rsi1Group, inline = "r1h")
+rsi1Width = input.int(2, "RSI width", minval = 1, group = rsi1Group, inline = "r1i")
+rsi1SignalWidth = input.int(1, "Signal width", minval = 1, group = rsi1Group, inline = "r1i")
+rsi1LineTransp = input.int(0, "Line transp", minval = 0, maxval = 100, group = rsi1Group, inline = "r1i")
+rsi1FillTransp = input.int(82, "Fill transp", minval = 0, maxval = 100, group = rsi1Group, inline = "r1i")
+
+rsi2Group = "RSI 2"
+rsi2Enable = input.bool(false, "Enable", group = rsi2Group, inline = "r2a")
+rsi2Timeframe = input.timeframe("", "Timeframe", group = rsi2Group, inline = "r2a")
+rsi2SourceMode = input.string(SRC_GLOBAL, "Source", options = [SRC_GLOBAL, SRC_CLOSE, SRC_HL2, SRC_HLC3, SRC_OHLC4, SRC_CUSTOM], group = rsi2Group)
+rsi2CustomSource = input.source(close, "Custom source", group = rsi2Group)
+rsi2Length = input.int(14, "Length", minval = 1, group = rsi2Group, inline = "r2b")
+rsi2SmoothEnabled = input.bool(true, "Smooth", group = rsi2Group, inline = "r2b")
+rsi2SmoothLength = input.int(5, "Smooth len", minval = 1, group = rsi2Group, inline = "r2b")
+rsi2SmoothType = input.string(MA_EMA, "Smooth MA", options = [MA_SMA, MA_EMA, MA_RMA, MA_SMMA, MA_WMA, MA_VWMA, MA_HMA], group = rsi2Group, inline = "r2b")
+rsi2SignalEnabled = input.bool(true, "Signal", group = rsi2Group, inline = "r2c")
+rsi2SignalLength = input.int(9, "Signal len", minval = 1, group = rsi2Group, inline = "r2c")
+rsi2SignalType = input.string(MA_EMA, "Signal MA", options = [MA_SMA, MA_EMA, MA_RMA, MA_SMMA, MA_WMA, MA_VWMA, MA_HMA], group = rsi2Group, inline = "r2c")
+rsi2Upper = input.float(70.0, "Upper", minval = 0, maxval = 100, group = rsi2Group, inline = "r2d")
+rsi2Lower = input.float(30.0, "Lower", minval = 0, maxval = 100, group = rsi2Group, inline = "r2d")
+rsi2Mid = input.float(50.0, "Mid", minval = 0, maxval = 100, group = rsi2Group, inline = "r2d")
+rsi2ExtremeUpper = input.float(80.0, "Extreme upper", minval = 0, maxval = 100, group = rsi2Group, inline = "r2e")
+rsi2ExtremeLower = input.float(20.0, "Extreme lower", minval = 0, maxval = 100, group = rsi2Group, inline = "r2e")
+rsi2Plot = input.bool(true, "Plot RSI", group = rsi2Group, inline = "r2f")
+rsi2PlotSignal = input.bool(true, "Signal", group = rsi2Group, inline = "r2f")
+rsi2ShowFill = input.bool(true, "Fill", group = rsi2Group, inline = "r2f")
+rsi2ShowMarkers = input.bool(true, "Markers", group = rsi2Group, inline = "r2g")
+rsi2ShowBg = input.bool(true, "BG", group = rsi2Group, inline = "r2g")
+rsi2ColorMode = input.string(COLOR_RSI_REF, "Color mode", options = [COLOR_STATIC, COLOR_SLOPE, COLOR_ZONE, COLOR_RSI_REF], group = rsi2Group)
+rsi2Color = input.color(color.blue, "RSI color", group = rsi2Group, inline = "r2h")
+rsi2SignalColor = input.color(color.fuchsia, "Signal color", group = rsi2Group, inline = "r2h")
+rsi2FillColor = input.color(color.new(color.purple, 82), "Fill color", group = rsi2Group, inline = "r2h")
+rsi2Width = input.int(2, "RSI width", minval = 1, group = rsi2Group, inline = "r2i")
+rsi2SignalWidth = input.int(1, "Signal width", minval = 1, group = rsi2Group, inline = "r2i")
+rsi2LineTransp = input.int(0, "Line transp", minval = 0, maxval = 100, group = rsi2Group, inline = "r2i")
+rsi2FillTransp = input.int(82, "Fill transp", minval = 0, maxval = 100, group = rsi2Group, inline = "r2i")
+
+rsi3Group = "RSI 3"
+rsi3Enable = input.bool(false, "Enable", group = rsi3Group, inline = "r3a")
+rsi3Timeframe = input.timeframe("", "Timeframe", group = rsi3Group, inline = "r3a")
+rsi3SourceMode = input.string(SRC_GLOBAL, "Source", options = [SRC_GLOBAL, SRC_CLOSE, SRC_HL2, SRC_HLC3, SRC_OHLC4, SRC_CUSTOM], group = rsi3Group)
+rsi3CustomSource = input.source(close, "Custom source", group = rsi3Group)
+rsi3Length = input.int(14, "Length", minval = 1, group = rsi3Group, inline = "r3b")
+rsi3SmoothEnabled = input.bool(true, "Smooth", group = rsi3Group, inline = "r3b")
+rsi3SmoothLength = input.int(5, "Smooth len", minval = 1, group = rsi3Group, inline = "r3b")
+rsi3SmoothType = input.string(MA_EMA, "Smooth MA", options = [MA_SMA, MA_EMA, MA_RMA, MA_SMMA, MA_WMA, MA_VWMA, MA_HMA], group = rsi3Group, inline = "r3b")
+rsi3SignalEnabled = input.bool(true, "Signal", group = rsi3Group, inline = "r3c")
+rsi3SignalLength = input.int(9, "Signal len", minval = 1, group = rsi3Group, inline = "r3c")
+rsi3SignalType = input.string(MA_EMA, "Signal MA", options = [MA_SMA, MA_EMA, MA_RMA, MA_SMMA, MA_WMA, MA_VWMA, MA_HMA], group = rsi3Group, inline = "r3c")
+rsi3Upper = input.float(70.0, "Upper", minval = 0, maxval = 100, group = rsi3Group, inline = "r3d")
+rsi3Lower = input.float(30.0, "Lower", minval = 0, maxval = 100, group = rsi3Group, inline = "r3d")
+rsi3Mid = input.float(50.0, "Mid", minval = 0, maxval = 100, group = rsi3Group, inline = "r3d")
+rsi3ExtremeUpper = input.float(80.0, "Extreme upper", minval = 0, maxval = 100, group = rsi3Group, inline = "r3e")
+rsi3ExtremeLower = input.float(20.0, "Extreme lower", minval = 0, maxval = 100, group = rsi3Group, inline = "r3e")
+rsi3Plot = input.bool(true, "Plot RSI", group = rsi3Group, inline = "r3f")
+rsi3PlotSignal = input.bool(true, "Signal", group = rsi3Group, inline = "r3f")
+rsi3ShowFill = input.bool(true, "Fill", group = rsi3Group, inline = "r3f")
+rsi3ShowMarkers = input.bool(true, "Markers", group = rsi3Group, inline = "r3g")
+rsi3ShowBg = input.bool(true, "BG", group = rsi3Group, inline = "r3g")
+rsi3ColorMode = input.string(COLOR_RSI_REF, "Color mode", options = [COLOR_STATIC, COLOR_SLOPE, COLOR_ZONE, COLOR_RSI_REF], group = rsi3Group)
+rsi3Color = input.color(color.green, "RSI color", group = rsi3Group, inline = "r3h")
+rsi3SignalColor = input.color(color.red, "Signal color", group = rsi3Group, inline = "r3h")
+rsi3FillColor = input.color(color.new(color.green, 82), "Fill color", group = rsi3Group, inline = "r3h")
+rsi3Width = input.int(2, "RSI width", minval = 1, group = rsi3Group, inline = "r3i")
+rsi3SignalWidth = input.int(1, "Signal width", minval = 1, group = rsi3Group, inline = "r3i")
+rsi3LineTransp = input.int(0, "Line transp", minval = 0, maxval = 100, group = rsi3Group, inline = "r3i")
+rsi3FillTransp = input.int(82, "Fill transp", minval = 0, maxval = 100, group = rsi3Group, inline = "r3i")
+
+rsi4Group = "RSI 4"
+rsi4Enable = input.bool(false, "Enable", group = rsi4Group, inline = "r4a")
+rsi4Timeframe = input.timeframe("", "Timeframe", group = rsi4Group, inline = "r4a")
+rsi4SourceMode = input.string(SRC_GLOBAL, "Source", options = [SRC_GLOBAL, SRC_CLOSE, SRC_HL2, SRC_HLC3, SRC_OHLC4, SRC_CUSTOM], group = rsi4Group)
+rsi4CustomSource = input.source(close, "Custom source", group = rsi4Group)
+rsi4Length = input.int(14, "Length", minval = 1, group = rsi4Group, inline = "r4b")
+rsi4SmoothEnabled = input.bool(true, "Smooth", group = rsi4Group, inline = "r4b")
+rsi4SmoothLength = input.int(5, "Smooth len", minval = 1, group = rsi4Group, inline = "r4b")
+rsi4SmoothType = input.string(MA_EMA, "Smooth MA", options = [MA_SMA, MA_EMA, MA_RMA, MA_SMMA, MA_WMA, MA_VWMA, MA_HMA], group = rsi4Group, inline = "r4b")
+rsi4SignalEnabled = input.bool(true, "Signal", group = rsi4Group, inline = "r4c")
+rsi4SignalLength = input.int(9, "Signal len", minval = 1, group = rsi4Group, inline = "r4c")
+rsi4SignalType = input.string(MA_EMA, "Signal MA", options = [MA_SMA, MA_EMA, MA_RMA, MA_SMMA, MA_WMA, MA_VWMA, MA_HMA], group = rsi4Group, inline = "r4c")
+rsi4Upper = input.float(70.0, "Upper", minval = 0, maxval = 100, group = rsi4Group, inline = "r4d")
+rsi4Lower = input.float(30.0, "Lower", minval = 0, maxval = 100, group = rsi4Group, inline = "r4d")
+rsi4Mid = input.float(50.0, "Mid", minval = 0, maxval = 100, group = rsi4Group, inline = "r4d")
+rsi4ExtremeUpper = input.float(80.0, "Extreme upper", minval = 0, maxval = 100, group = rsi4Group, inline = "r4e")
+rsi4ExtremeLower = input.float(20.0, "Extreme lower", minval = 0, maxval = 100, group = rsi4Group, inline = "r4e")
+rsi4Plot = input.bool(true, "Plot RSI", group = rsi4Group, inline = "r4f")
+rsi4PlotSignal = input.bool(true, "Signal", group = rsi4Group, inline = "r4f")
+rsi4ShowFill = input.bool(true, "Fill", group = rsi4Group, inline = "r4f")
+rsi4ShowMarkers = input.bool(true, "Markers", group = rsi4Group, inline = "r4g")
+rsi4ShowBg = input.bool(true, "BG", group = rsi4Group, inline = "r4g")
+rsi4ColorMode = input.string(COLOR_RSI_REF, "Color mode", options = [COLOR_STATIC, COLOR_SLOPE, COLOR_ZONE, COLOR_RSI_REF], group = rsi4Group)
+rsi4Color = input.color(color.orange, "RSI color", group = rsi4Group, inline = "r4h")
+rsi4SignalColor = input.color(color.teal, "Signal color", group = rsi4Group, inline = "r4h")
+rsi4FillColor = input.color(color.new(color.orange, 82), "Fill color", group = rsi4Group, inline = "r4h")
+rsi4Width = input.int(2, "RSI width", minval = 1, group = rsi4Group, inline = "r4i")
+rsi4SignalWidth = input.int(1, "Signal width", minval = 1, group = rsi4Group, inline = "r4i")
+rsi4LineTransp = input.int(0, "Line transp", minval = 0, maxval = 100, group = rsi4Group, inline = "r4i")
+rsi4FillTransp = input.int(82, "Fill transp", minval = 0, maxval = 100, group = rsi4Group, inline = "r4i")
+
+rsi5Group = "RSI 5"
+rsi5Enable = input.bool(false, "Enable", group = rsi5Group, inline = "r5a")
+rsi5Timeframe = input.timeframe("", "Timeframe", group = rsi5Group, inline = "r5a")
+rsi5SourceMode = input.string(SRC_GLOBAL, "Source", options = [SRC_GLOBAL, SRC_CLOSE, SRC_HL2, SRC_HLC3, SRC_OHLC4, SRC_CUSTOM], group = rsi5Group)
+rsi5CustomSource = input.source(close, "Custom source", group = rsi5Group)
+rsi5Length = input.int(14, "Length", minval = 1, group = rsi5Group, inline = "r5b")
+rsi5SmoothEnabled = input.bool(true, "Smooth", group = rsi5Group, inline = "r5b")
+rsi5SmoothLength = input.int(5, "Smooth len", minval = 1, group = rsi5Group, inline = "r5b")
+rsi5SmoothType = input.string(MA_EMA, "Smooth MA", options = [MA_SMA, MA_EMA, MA_RMA, MA_SMMA, MA_WMA, MA_VWMA, MA_HMA], group = rsi5Group, inline = "r5b")
+rsi5SignalEnabled = input.bool(true, "Signal", group = rsi5Group, inline = "r5c")
+rsi5SignalLength = input.int(9, "Signal len", minval = 1, group = rsi5Group, inline = "r5c")
+rsi5SignalType = input.string(MA_EMA, "Signal MA", options = [MA_SMA, MA_EMA, MA_RMA, MA_SMMA, MA_WMA, MA_VWMA, MA_HMA], group = rsi5Group, inline = "r5c")
+rsi5Upper = input.float(70.0, "Upper", minval = 0, maxval = 100, group = rsi5Group, inline = "r5d")
+rsi5Lower = input.float(30.0, "Lower", minval = 0, maxval = 100, group = rsi5Group, inline = "r5d")
+rsi5Mid = input.float(50.0, "Mid", minval = 0, maxval = 100, group = rsi5Group, inline = "r5d")
+rsi5ExtremeUpper = input.float(80.0, "Extreme upper", minval = 0, maxval = 100, group = rsi5Group, inline = "r5e")
+rsi5ExtremeLower = input.float(20.0, "Extreme lower", minval = 0, maxval = 100, group = rsi5Group, inline = "r5e")
+rsi5Plot = input.bool(true, "Plot RSI", group = rsi5Group, inline = "r5f")
+rsi5PlotSignal = input.bool(true, "Signal", group = rsi5Group, inline = "r5f")
+rsi5ShowFill = input.bool(true, "Fill", group = rsi5Group, inline = "r5f")
+rsi5ShowMarkers = input.bool(true, "Markers", group = rsi5Group, inline = "r5g")
+rsi5ShowBg = input.bool(true, "BG", group = rsi5Group, inline = "r5g")
+rsi5ColorMode = input.string(COLOR_RSI_REF, "Color mode", options = [COLOR_STATIC, COLOR_SLOPE, COLOR_ZONE, COLOR_RSI_REF], group = rsi5Group)
+rsi5Color = input.color(color.maroon, "RSI color", group = rsi5Group, inline = "r5h")
+rsi5SignalColor = input.color(color.rgb(212, 175, 55), "Signal color", group = rsi5Group, inline = "r5h")
+rsi5FillColor = input.color(color.new(color.maroon, 82), "Fill color", group = rsi5Group, inline = "r5h")
+rsi5Width = input.int(2, "RSI width", minval = 1, group = rsi5Group, inline = "r5i")
+rsi5SignalWidth = input.int(1, "Signal width", minval = 1, group = rsi5Group, inline = "r5i")
+rsi5LineTransp = input.int(0, "Line transp", minval = 0, maxval = 100, group = rsi5Group, inline = "r5i")
+rsi5FillTransp = input.int(82, "Fill transp", minval = 0, maxval = 100, group = rsi5Group, inline = "r5i")
+
+// -----------------------------------------------------------------------------
+// 8. TTM Squeeze inputs
+// -----------------------------------------------------------------------------
+ttmGroup = "TTM Squeeze"
+ttmEnable = input.bool(true, "Enable TTM Squeeze", group = ttmGroup, inline = "t1a")
+ttmTimeframe = input.timeframe("", "Timeframe", group = ttmGroup, inline = "t1a")
+ttmSourceMode = input.string(SRC_GLOBAL, "Source", options = [SRC_GLOBAL, SRC_CLOSE, SRC_HL2, SRC_HLC3, SRC_OHLC4, SRC_CUSTOM], group = ttmGroup)
+ttmCustomSource = input.source(close, "Custom source", group = ttmGroup)
+ttmBbLen = input.int(20, "BB length", minval = 1, group = ttmGroup, inline = "t1b")
+ttmBbMult = input.float(2.0, "BB mult", minval = 0.1, step = 0.1, group = ttmGroup, inline = "t1b")
+ttmBbMaType = input.string(MA_SMA, "BB MA", options = [MA_SMA, MA_EMA, MA_RMA, MA_SMMA, MA_WMA, MA_VWMA, MA_HMA], group = ttmGroup, inline = "t1b")
+ttmKcLen = input.int(20, "KC length", minval = 1, group = ttmGroup, inline = "t1c")
+ttmKcMult = input.float(1.5, "KC mult", minval = 0.1, step = 0.1, group = ttmGroup, inline = "t1c")
+ttmKcMaType = input.string(MA_SMA, "KC MA", options = [MA_SMA, MA_EMA, MA_RMA, MA_SMMA, MA_WMA, MA_VWMA, MA_HMA], group = ttmGroup, inline = "t1c")
+ttmUseTrueRange = input.bool(true, "Use true range", group = ttmGroup, inline = "t1d")
+ttmMomentumMode = input.string(MOMENTUM_LAZYBEAR, "Momentum mode", options = [MOMENTUM_LAZYBEAR, MOMENTUM_ROC, MOMENTUM_DIFF_MA], group = ttmGroup, inline = "t1d")
+ttmMomentumLen = input.int(20, "Momentum length", minval = 1, group = ttmGroup, inline = "t1e")
+ttmMomentumSmoothLen = input.int(5, "Smooth len", minval = 1, group = ttmGroup, inline = "t1e")
+ttmMomentumSmoothType = input.string(MA_EMA, "Smooth MA", options = [MA_SMA, MA_EMA, MA_RMA, MA_SMMA, MA_WMA, MA_VWMA, MA_HMA], group = ttmGroup, inline = "t1e")
+ttmHistogramScaling = input.string(H_SCALE_FIXED, "Histogram scaling", options = [H_SCALE_RAW, H_SCALE_CENTER, H_SCALE_AUTO, H_SCALE_FIXED], group = ttmGroup)
+ttmHistogramMultiplier = input.float(1.0, "Histogram multiplier", minval = 0.01, step = 0.01, group = ttmGroup, inline = "t1f")
+ttmBaseline = input.float(50.0, "Baseline", minval = 0, maxval = 100, group = ttmGroup, inline = "t1f")
+ttmPlacement = input.string(H_PLACE_CENTER, "Vertical placement", options = [H_PLACE_CENTER, H_PLACE_LOWER, H_PLACE_UPPER, H_PLACE_RAW], group = ttmGroup)
+// Pine scripts share one lower-pane scale, so "Raw separate scale" is a best-effort offset rather than a true independent axis.
+ttmShowHistogram = input.bool(true, "Show histogram", group = ttmGroup, inline = "t1g")
+ttmShowDots = input.bool(true, "Show squeeze dots", group = ttmGroup, inline = "t1g")
+ttmShowBaseline = input.bool(true, "Show baseline line", group = ttmGroup, inline = "t1g")
+ttmShowCompressionBg = input.bool(false, "Show compression background", group = ttmGroup, inline = "t1h")
+ttmShowDurationCounter = input.bool(true, "Show squeeze duration counter", group = ttmGroup, inline = "t1h")
+ttmShowReleaseLabels = input.bool(false, "Show release labels", group = ttmGroup, inline = "t1h")
+ttmShowInDashboard = input.bool(true, "Show in dashboard", group = ttmGroup, inline = "t1i")
+ttmMtfMode = input.string(TTF_CHART, "MTF squeeze mode", options = [TTF_CHART, TTF_HIGHER, TTF_BOTH], group = ttmGroup, inline = "t1i")
+ttmHigherTf = input.timeframe("240", "Higher timeframe confirm", group = ttmGroup, inline = "t1i")
+ttmHistPosRiseColor = input.color(color.lime, "Positive rising", group = ttmGroup, inline = "t1j")
+ttmHistPosFallColor = input.color(color.aqua, "Positive falling", group = ttmGroup, inline = "t1j")
+ttmHistNegFallColor = input.color(color.red, "Negative falling", group = ttmGroup, inline = "t1j")
+ttmHistNegRiseColor = input.color(color.orange, "Negative rising", group = ttmGroup, inline = "t1j")
+ttmHistTransp = input.int(0, "Histogram transp", minval = 0, maxval = 100, group = ttmGroup, inline = "t1k")
+ttmDotOnColor = input.color(color.orange, "Squeeze on", group = ttmGroup, inline = "t1k")
+ttmDotOffColor = input.color(color.aqua, "Squeeze off", group = ttmGroup, inline = "t1k")
+ttmDotNoneColor = input.color(color.gray, "No squeeze", group = ttmGroup, inline = "t1k")
+ttmPulseBars = input.int(3, "Pulse bars after fire", minval = 0, maxval = 20, group = ttmGroup, inline = "t1l")
+ttmPulseColor = input.color(color.yellow, "Pulse color", group = ttmGroup, inline = "t1l")
+ttmPulseTransp = input.int(90, "Pulse transp", minval = 0, maxval = 100, group = ttmGroup, inline = "t1l")
+
+// -----------------------------------------------------------------------------
+// 9. Confluence inputs
+// -----------------------------------------------------------------------------
+confluenceGroup = "Confluence"
+showConfluenceSignals = input.bool(true, "Enable confluence signals", group = confluenceGroup, inline = "c1")
+bullStochRequired = input.int(2, "Bullish Stoch required", minval = 0, maxval = 5, group = confluenceGroup, inline = "c1")
+bullRsiRequired = input.int(2, "Bullish RSI required", minval = 0, maxval = 5, group = confluenceGroup, inline = "c1")
+requireBullTtmFire = input.bool(false, "Require bullish TTM fire", group = confluenceGroup, inline = "c1")
+bearStochRequired = input.int(2, "Bearish Stoch required", minval = 0, maxval = 5, group = confluenceGroup, inline = "c2")
+bearRsiRequired = input.int(2, "Bearish RSI required", minval = 0, maxval = 5, group = confluenceGroup, inline = "c2")
+requireBearTtmFire = input.bool(false, "Require bearish TTM fire", group = confluenceGroup, inline = "c2")
+showConfluenceMarkers = input.bool(true, "Show confluence markers", group = confluenceGroup, inline = "c3")
+confluenceBullColor = input.color(color.lime, "Bull color", group = confluenceGroup, inline = "c3")
+confluenceBearColor = input.color(color.red, "Bear color", group = confluenceGroup, inline = "c3")
+confluenceMarkerTransp = input.int(0, "Marker transp", minval = 0, maxval = 100, group = confluenceGroup, inline = "c3")
+
+// -----------------------------------------------------------------------------
+// 10. Table / label settings
+// -----------------------------------------------------------------------------
+tableGroup = "Dashboard"
+dashboardPosition = input.string("top_right", "Position", options = ["top_right", "top_left", "bottom_right", "bottom_left"], group = tableGroup)
+dashboardTextSize = input.string("tiny", "Text size", options = ["tiny", "small", "normal"], group = tableGroup)
+
+// -----------------------------------------------------------------------------
+// 10. Data preparation
+// -----------------------------------------------------------------------------
+string resolvedGlobalTf = f_resolve_tf("", globalTimeframeOverride, true)
+bool presetIsMinimal = presetMode == PRESET_MINIMAL
+bool presetIsClassic = presetMode == PRESET_CLASSIC
+bool presetIsScalp = presetMode == PRESET_SCALP
+bool presetIsSwing = presetMode == PRESET_SWING
+bool presetIsSqueeze = presetMode == PRESET_SQUEEZE
+bool effectiveMinimalMode = minimalMode or presetIsMinimal
+bool effectiveShowLabels = showRightLabels and not effectiveMinimalMode
+bool effectiveShowTable = showTable or diagnosticMode
+bool effectiveShowConfluence = showConfluenceSignals
+bool effectiveShowCompressionBg = ttmShowCompressionBg or presetIsSqueeze
+bool effectivePulseBg = ttmPulseBars > 0 and effectiveShowCompressionBg
+bool effectiveHighlightConsensus = highlightConsensus or presetIsSqueeze
+bool stoch1On = enableStochastics and stoch1Enable
+bool stoch2On = enableStochastics and stoch2Enable
+bool stoch3On = enableStochastics and stoch3Enable
+bool stoch4On = enableStochastics and stoch4Enable
+bool stoch5On = enableStochastics and stoch5Enable
+bool rsi1On = enableRsis and rsi1Enable
+bool rsi2On = enableRsis and rsi2Enable
+bool rsi3On = enableRsis and rsi3Enable
+bool rsi4On = enableRsis and rsi4Enable
+bool rsi5On = enableRsis and rsi5Enable
+bool ttmOn = enableTtmSqueeze and ttmEnable
+
+float levelUpper = switch globalLevelPreset
+    LEVEL_8020 => 80.0
+    LEVEL_7030 => 70.0
+    LEVEL_7525 => 75.0
+    => globalUpperLevelInput
+
+float levelMiddle = switch globalLevelPreset
+    LEVEL_8020 => 50.0
+    LEVEL_7030 => 50.0
+    LEVEL_7525 => 50.0
+    => globalMiddleLevelInput
+
+float levelLower = switch globalLevelPreset
+    LEVEL_8020 => 20.0
+    LEVEL_7030 => 30.0
+    LEVEL_7525 => 25.0
+    => globalLowerLevelInput
+
+string tablePos = switch dashboardPosition
+    "top_left" => position.top_left
+    "bottom_right" => position.bottom_right
+    "bottom_left" => position.bottom_left
+    => position.top_right
+
+tableTextSize := switch dashboardTextSize
+    "small" => size.small
+    "normal" => size.normal
+    => size.tiny
+
+var table dashboardTbl = table.new(tablePos, 6, 16, frame_color = color.new(color.gray, 70), frame_width = 1, border_color = color.new(color.gray, 80), bgcolor = color.new(color.black, 84))
+var array<label> rightLabels = array.new<label>(11)
+
+// Core series requested on the chart timeframe or the user-selected global override.
+// These are reused by module blocks when the per-module timeframe is blank.
+float chartSourceClose = close
+float chartSourceHigh = high
+float chartSourceLow = low
+float chartSourceOpen = open
+
+// -----------------------------------------------------------------------------
+// 11. Stoch calculations
+// -----------------------------------------------------------------------------
+[stoch1K, stoch1D, stoch1Raw, stoch1State, stoch1BullSignal, stoch1BearSignal, stoch1CrossUp, stoch1CrossDown, stoch1ExitOS, stoch1ExitOB, stoch1KLineColor, stoch1DLineColor, stoch1FillPlotColor, stoch1BgColor] = f_calc_stoch(stoch1On, stoch1Timeframe, stoch1SourceMode, stoch1Length, stoch1SmoothK, stoch1SmoothD, stoch1KMaType, stoch1DMaType, stoch1Upper, stoch1Lower, stoch1Mid, stoch1ColorMode, stoch1KColor, stoch1DColor, stoch1FillColor, stoch1LineTransp, stoch1FillTransp, resolvedGlobalTf, useRealOhlc, allowLookaheadTest, effectiveMinimalMode)
+[stoch2K, stoch2D, stoch2Raw, stoch2State, stoch2BullSignal, stoch2BearSignal, stoch2CrossUp, stoch2CrossDown, stoch2ExitOS, stoch2ExitOB, stoch2KLineColor, stoch2DLineColor, stoch2FillPlotColor, stoch2BgColor] = f_calc_stoch(stoch2On, stoch2Timeframe, stoch2SourceMode, stoch2Length, stoch2SmoothK, stoch2SmoothD, stoch2KMaType, stoch2DMaType, stoch2Upper, stoch2Lower, stoch2Mid, stoch2ColorMode, stoch2KColor, stoch2DColor, stoch2FillColor, stoch2LineTransp, stoch2FillTransp, resolvedGlobalTf, useRealOhlc, allowLookaheadTest, effectiveMinimalMode)
+[stoch3K, stoch3D, stoch3Raw, stoch3State, stoch3BullSignal, stoch3BearSignal, stoch3CrossUp, stoch3CrossDown, stoch3ExitOS, stoch3ExitOB, stoch3KLineColor, stoch3DLineColor, stoch3FillPlotColor, stoch3BgColor] = f_calc_stoch(stoch3On, stoch3Timeframe, stoch3SourceMode, stoch3Length, stoch3SmoothK, stoch3SmoothD, stoch3KMaType, stoch3DMaType, stoch3Upper, stoch3Lower, stoch3Mid, stoch3ColorMode, stoch3KColor, stoch3DColor, stoch3FillColor, stoch3LineTransp, stoch3FillTransp, resolvedGlobalTf, useRealOhlc, allowLookaheadTest, effectiveMinimalMode)
+[stoch4K, stoch4D, stoch4Raw, stoch4State, stoch4BullSignal, stoch4BearSignal, stoch4CrossUp, stoch4CrossDown, stoch4ExitOS, stoch4ExitOB, stoch4KLineColor, stoch4DLineColor, stoch4FillPlotColor, stoch4BgColor] = f_calc_stoch(stoch4On, stoch4Timeframe, stoch4SourceMode, stoch4Length, stoch4SmoothK, stoch4SmoothD, stoch4KMaType, stoch4DMaType, stoch4Upper, stoch4Lower, stoch4Mid, stoch4ColorMode, stoch4KColor, stoch4DColor, stoch4FillColor, stoch4LineTransp, stoch4FillTransp, resolvedGlobalTf, useRealOhlc, allowLookaheadTest, effectiveMinimalMode)
+[stoch5K, stoch5D, stoch5Raw, stoch5State, stoch5BullSignal, stoch5BearSignal, stoch5CrossUp, stoch5CrossDown, stoch5ExitOS, stoch5ExitOB, stoch5KLineColor, stoch5DLineColor, stoch5FillPlotColor, stoch5BgColor] = f_calc_stoch(stoch5On, stoch5Timeframe, stoch5SourceMode, stoch5Length, stoch5SmoothK, stoch5SmoothD, stoch5KMaType, stoch5DMaType, stoch5Upper, stoch5Lower, stoch5Mid, stoch5ColorMode, stoch5KColor, stoch5DColor, stoch5FillColor, stoch5LineTransp, stoch5FillTransp, resolvedGlobalTf, useRealOhlc, allowLookaheadTest, effectiveMinimalMode)
+
+// -----------------------------------------------------------------------------
+// 12. RSI calculations
+// -----------------------------------------------------------------------------
+[rsi1Value, rsi1SignalValue, rsi1State, rsi1BullSignal, rsi1BearSignal, rsi1CrossAboveSignal, rsi1CrossBelowSignal, rsi1CrossAboveLower, rsi1CrossBelowUpper, rsi1CrossAboveMid, rsi1CrossBelowMid, rsi1EnterOB, rsi1ExitOB, rsi1EnterOS, rsi1ExitOS, rsi1RsiLineColor, rsi1SignalLineColor, rsi1FillPlotColor, rsi1BgColor] = f_calc_rsi(rsi1On, rsi1Timeframe, rsi1SourceMode, rsi1CustomSource, rsi1Length, rsi1SmoothEnabled, rsi1SmoothLength, rsi1SmoothType, rsi1SignalEnabled, rsi1SignalLength, rsi1SignalType, rsi1Upper, rsi1Lower, rsi1Mid, rsi1ExtremeUpper, rsi1ExtremeLower, rsi1ColorMode, rsi1Color, rsi1SignalColor, rsi1FillColor, rsi1LineTransp, rsi1FillTransp, resolvedGlobalTf, globalSourceKind, globalCustomSource, useRealOhlc, allowLookaheadTest, effectiveMinimalMode)
+[rsi2Value, rsi2SignalValue, rsi2State, rsi2BullSignal, rsi2BearSignal, rsi2CrossAboveSignal, rsi2CrossBelowSignal, rsi2CrossAboveLower, rsi2CrossBelowUpper, rsi2CrossAboveMid, rsi2CrossBelowMid, rsi2EnterOB, rsi2ExitOB, rsi2EnterOS, rsi2ExitOS, rsi2RsiLineColor, rsi2SignalLineColor, rsi2FillPlotColor, rsi2BgColor] = f_calc_rsi(rsi2On, rsi2Timeframe, rsi2SourceMode, rsi2CustomSource, rsi2Length, rsi2SmoothEnabled, rsi2SmoothLength, rsi2SmoothType, rsi2SignalEnabled, rsi2SignalLength, rsi2SignalType, rsi2Upper, rsi2Lower, rsi2Mid, rsi2ExtremeUpper, rsi2ExtremeLower, rsi2ColorMode, rsi2Color, rsi2SignalColor, rsi2FillColor, rsi2LineTransp, rsi2FillTransp, resolvedGlobalTf, globalSourceKind, globalCustomSource, useRealOhlc, allowLookaheadTest, effectiveMinimalMode)
+[rsi3Value, rsi3SignalValue, rsi3State, rsi3BullSignal, rsi3BearSignal, rsi3CrossAboveSignal, rsi3CrossBelowSignal, rsi3CrossAboveLower, rsi3CrossBelowUpper, rsi3CrossAboveMid, rsi3CrossBelowMid, rsi3EnterOB, rsi3ExitOB, rsi3EnterOS, rsi3ExitOS, rsi3RsiLineColor, rsi3SignalLineColor, rsi3FillPlotColor, rsi3BgColor] = f_calc_rsi(rsi3On, rsi3Timeframe, rsi3SourceMode, rsi3CustomSource, rsi3Length, rsi3SmoothEnabled, rsi3SmoothLength, rsi3SmoothType, rsi3SignalEnabled, rsi3SignalLength, rsi3SignalType, rsi3Upper, rsi3Lower, rsi3Mid, rsi3ExtremeUpper, rsi3ExtremeLower, rsi3ColorMode, rsi3Color, rsi3SignalColor, rsi3FillColor, rsi3LineTransp, rsi3FillTransp, resolvedGlobalTf, globalSourceKind, globalCustomSource, useRealOhlc, allowLookaheadTest, effectiveMinimalMode)
+[rsi4Value, rsi4SignalValue, rsi4State, rsi4BullSignal, rsi4BearSignal, rsi4CrossAboveSignal, rsi4CrossBelowSignal, rsi4CrossAboveLower, rsi4CrossBelowUpper, rsi4CrossAboveMid, rsi4CrossBelowMid, rsi4EnterOB, rsi4ExitOB, rsi4EnterOS, rsi4ExitOS, rsi4RsiLineColor, rsi4SignalLineColor, rsi4FillPlotColor, rsi4BgColor] = f_calc_rsi(rsi4On, rsi4Timeframe, rsi4SourceMode, rsi4CustomSource, rsi4Length, rsi4SmoothEnabled, rsi4SmoothLength, rsi4SmoothType, rsi4SignalEnabled, rsi4SignalLength, rsi4SignalType, rsi4Upper, rsi4Lower, rsi4Mid, rsi4ExtremeUpper, rsi4ExtremeLower, rsi4ColorMode, rsi4Color, rsi4SignalColor, rsi4FillColor, rsi4LineTransp, rsi4FillTransp, resolvedGlobalTf, globalSourceKind, globalCustomSource, useRealOhlc, allowLookaheadTest, effectiveMinimalMode)
+[rsi5Value, rsi5SignalValue, rsi5State, rsi5BullSignal, rsi5BearSignal, rsi5CrossAboveSignal, rsi5CrossBelowSignal, rsi5CrossAboveLower, rsi5CrossBelowUpper, rsi5CrossAboveMid, rsi5CrossBelowMid, rsi5EnterOB, rsi5ExitOB, rsi5EnterOS, rsi5ExitOS, rsi5RsiLineColor, rsi5SignalLineColor, rsi5FillPlotColor, rsi5BgColor] = f_calc_rsi(rsi5On, rsi5Timeframe, rsi5SourceMode, rsi5CustomSource, rsi5Length, rsi5SmoothEnabled, rsi5SmoothLength, rsi5SmoothType, rsi5SignalEnabled, rsi5SignalLength, rsi5SignalType, rsi5Upper, rsi5Lower, rsi5Mid, rsi5ExtremeUpper, rsi5ExtremeLower, rsi5ColorMode, rsi5Color, rsi5SignalColor, rsi5FillColor, rsi5LineTransp, rsi5FillTransp, resolvedGlobalTf, globalSourceKind, globalCustomSource, useRealOhlc, allowLookaheadTest, effectiveMinimalMode)
+
+// -----------------------------------------------------------------------------
+// 13. TTM calculations
+// -----------------------------------------------------------------------------
+[ttmSqOnChart, ttmSqOffChart, ttmNoSqChart, ttmMomRawChart, ttmMomSmoothChart, ttmBbWidthChart, ttmKcWidthChart, ttmBbBasisChart, ttmUpperBBChart, ttmLowerBBChart, ttmUpperKCChart, ttmLowerKCChart] = f_calc_ttm(ttmOn, ttmTimeframe, ttmSourceMode, ttmCustomSource, ttmBbLen, ttmBbMult, ttmBbMaType, ttmKcLen, ttmKcMult, ttmKcMaType, ttmUseTrueRange, ttmMomentumLen, ttmMomentumSmoothLen, ttmMomentumSmoothType, ttmMomentumMode, ttmHistogramScaling, ttmHistogramMultiplier, ttmBaseline, ttmPlacement, resolvedGlobalTf, globalSourceKind, globalCustomSource, useRealOhlc, allowLookaheadTest)
+
+string ttmSourceKindResolved = ttmSourceMode == SRC_GLOBAL ? globalSourceKind : ttmSourceMode
+float ttmCustomResolved = ttmSourceMode == SRC_GLOBAL ? globalCustomSource : ttmCustomSource
+bool ttmNeedHtf = ttmOn and ttmMtfMode != TTF_CHART and ttmHigherTf != ""
+bool ttmUseHtfOnly = ttmMtfMode == TTF_HIGHER
+bool ttmUseBoth = ttmMtfMode == TTF_BOTH
+[ttmSqOnHtf, ttmSqOffHtf, ttmNoSqHtf, ttmHigherMomRaw, ttmHigherMomSmooth, ttmHigherBbWidth, ttmHigherKcWidth, _, _, _, _, _] = if ttmNeedHtf
+    request.security(symbol = f_symbol(useRealOhlc), timeframe = ttmHigherTf, expression = f_ttm_squeeze(f_source_expr(ttmSourceKindResolved, ttmCustomResolved), high, low, close, ttmBbLen, ttmBbMult, ttmBbMaType, ttmKcLen, ttmKcMult, ttmKcMaType, ttmUseTrueRange, ttmMomentumLen, ttmMomentumSmoothLen, ttmMomentumSmoothType, ttmMomentumMode), gaps = barmerge.gaps_off, lookahead = allowLookaheadTest ? barmerge.lookahead_on : barmerge.lookahead_off)
+else
+    [false, false, false, na, na, na, na, na, na, na, na, na]
+
+bool ttmSelectedSqOn = ttmUseHtfOnly and ttmNeedHtf ? ttmSqOnHtf : ttmUseBoth and ttmNeedHtf ? (ttmSqOnChart and ttmSqOnHtf) : ttmSqOnChart
+bool ttmSelectedSqOff = ttmUseHtfOnly and ttmNeedHtf ? ttmSqOffHtf : ttmUseBoth and ttmNeedHtf ? (ttmSqOffChart and ttmSqOffHtf) : ttmSqOffChart
+bool ttmSelectedNoSq = not ttmSelectedSqOn and not ttmSelectedSqOff
+float ttmSelectedMomRaw = ttmUseHtfOnly and ttmNeedHtf ? ttmHigherMomRaw : ttmMomRawChart
+float ttmSelectedMomSmooth = ttmUseHtfOnly and ttmNeedHtf ? ttmHigherMomSmooth : ttmMomSmoothChart
+float ttmSelectedBbWidth = ttmUseHtfOnly and ttmNeedHtf ? ttmHigherBbWidth : ttmBbWidthChart
+float ttmSelectedKcWidth = ttmUseHtfOnly and ttmNeedHtf ? ttmHigherKcWidth : ttmKcWidthChart
+float ttmDisplayBaseline = ttmHistogramScaling == H_SCALE_RAW ? 0.0 : ttmBaseline
+[ttmHistPlot, ttmDotY] = f_ttm_display(ttmSelectedMomSmooth, ttmMomentumLen, ttmHistogramScaling, ttmHistogramMultiplier, ttmDisplayBaseline, ttmPlacement)
+color ttmHistRawColor = ttmSelectedMomSmooth >= ttmDisplayBaseline ? (ttmSelectedMomSmooth > nz(ttmSelectedMomSmooth[1], ttmSelectedMomSmooth) ? ttmHistPosRiseColor : ttmHistPosFallColor) : (ttmSelectedMomSmooth < nz(ttmSelectedMomSmooth[1], ttmSelectedMomSmooth) ? ttmHistNegFallColor : ttmHistNegRiseColor)
+color ttmHistPlotColor = color.new(ttmHistRawColor, ttmHistTransp)
+color ttmDotPlotColor = ttmSelectedSqOn ? ttmDotOnColor : ttmSelectedSqOff ? ttmDotOffColor : ttmDotNoneColor
+bool ttmPrevSqOn = ttmSelectedSqOn[1]
+bool ttmSqueezeStart = ttmSelectedSqOn and not ttmPrevSqOn
+bool ttmSqueezeRelease = not ttmSelectedSqOn and ttmPrevSqOn
+bool ttmFireBull = ttmSqueezeRelease and ttmSelectedMomSmooth > ttmDisplayBaseline
+bool ttmFireBear = ttmSqueezeRelease and ttmSelectedMomSmooth < ttmDisplayBaseline
+float ttmCompressionHeat = ttmSelectedKcWidth > 0.0 ? f_clamp(100.0 * (1.0 - ttmSelectedBbWidth / ttmSelectedKcWidth), 0.0, 100.0) : 0.0
+var int ttmDurationBars = 0
+ttmDurationBars := ttmOn and ttmSelectedSqOn ? nz(ttmDurationBars[1]) + 1 : 0
+int ttmBarsSinceRelease = ta.barssince(ttmSqueezeRelease)
+string ttmState = ttmSelectedSqOn ? "Squeeze On" : ttmFireBull ? "Fired Bull" : ttmFireBear ? "Fired Bear" : ttmSelectedSqOff ? "Squeeze Off" : "No Squeeze"
+
+// -----------------------------------------------------------------------------
+// 14. Plotting
+// -----------------------------------------------------------------------------
+// Pine plots do not support a true dashed/styled line API. Width and alpha
+// controls are used instead, which keeps the chart readable and avoids hacks.
+
+// Global levels and soft oscillator grid.
+pUpper = plot(showGlobalLevels ? levelUpper : na, title = "Upper", color = color.new(levelUpperColor, levelLineTransp), linewidth = 1)
+pMiddle = plot(showGlobalLevels ? levelMiddle : na, title = "Middle", color = color.new(levelMiddleColor, levelLineTransp), linewidth = 1)
+pLower = plot(showGlobalLevels ? levelLower : na, title = "Lower", color = color.new(levelLowerColor, levelLineTransp), linewidth = 1)
+
+// Stochastic modules.
+pStoch1K = plot(stoch1On and stoch1PlotK ? stoch1K : na, title = "Stoch 1 K", color = stoch1KLineColor, linewidth = stoch1KWidth, style = plot.style_line)
+pStoch1D = plot(stoch1On and stoch1PlotD ? stoch1D : na, title = "Stoch 1 D", color = stoch1DLineColor, linewidth = stoch1DWidth, style = plot.style_line)
+
+pStoch2K = plot(stoch2On and stoch2PlotK ? stoch2K : na, title = "Stoch 2 K", color = stoch2KLineColor, linewidth = stoch2KWidth, style = plot.style_line)
+pStoch2D = plot(stoch2On and stoch2PlotD ? stoch2D : na, title = "Stoch 2 D", color = stoch2DLineColor, linewidth = stoch2DWidth, style = plot.style_line)
+
+pStoch3K = plot(stoch3On and stoch3PlotK ? stoch3K : na, title = "Stoch 3 K", color = stoch3KLineColor, linewidth = stoch3KWidth, style = plot.style_line)
+pStoch3D = plot(stoch3On and stoch3PlotD ? stoch3D : na, title = "Stoch 3 D", color = stoch3DLineColor, linewidth = stoch3DWidth, style = plot.style_line)
+
+pStoch4K = plot(stoch4On and stoch4PlotK ? stoch4K : na, title = "Stoch 4 K", color = stoch4KLineColor, linewidth = stoch4KWidth, style = plot.style_line)
+pStoch4D = plot(stoch4On and stoch4PlotD ? stoch4D : na, title = "Stoch 4 D", color = stoch4DLineColor, linewidth = stoch4DWidth, style = plot.style_line)
+
+pStoch5K = plot(stoch5On and stoch5PlotK ? stoch5K : na, title = "Stoch 5 K", color = stoch5KLineColor, linewidth = stoch5KWidth, style = plot.style_line)
+pStoch5D = plot(stoch5On and stoch5PlotD ? stoch5D : na, title = "Stoch 5 D", color = stoch5DLineColor, linewidth = stoch5DWidth, style = plot.style_line)
+
+// RSI modules.
+pRsi1 = plot(rsi1On and rsi1Plot ? rsi1Value : na, title = "RSI 1", color = rsi1RsiLineColor, linewidth = rsi1Width, style = plot.style_line)
+pRsi1Sig = plot(rsi1On and rsi1PlotSignal ? rsi1SignalValue : na, title = "RSI 1 Signal", color = rsi1SignalLineColor, linewidth = rsi1SignalWidth, style = plot.style_line)
+
+pRsi2 = plot(rsi2On and rsi2Plot ? rsi2Value : na, title = "RSI 2", color = rsi2RsiLineColor, linewidth = rsi2Width, style = plot.style_line)
+pRsi2Sig = plot(rsi2On and rsi2PlotSignal ? rsi2SignalValue : na, title = "RSI 2 Signal", color = rsi2SignalLineColor, linewidth = rsi2SignalWidth, style = plot.style_line)
+
+pRsi3 = plot(rsi3On and rsi3Plot ? rsi3Value : na, title = "RSI 3", color = rsi3RsiLineColor, linewidth = rsi3Width, style = plot.style_line)
+pRsi3Sig = plot(rsi3On and rsi3PlotSignal ? rsi3SignalValue : na, title = "RSI 3 Signal", color = rsi3SignalLineColor, linewidth = rsi3SignalWidth, style = plot.style_line)
+
+pRsi4 = plot(rsi4On and rsi4Plot ? rsi4Value : na, title = "RSI 4", color = rsi4RsiLineColor, linewidth = rsi4Width, style = plot.style_line)
+pRsi4Sig = plot(rsi4On and rsi4PlotSignal ? rsi4SignalValue : na, title = "RSI 4 Signal", color = rsi4SignalLineColor, linewidth = rsi4SignalWidth, style = plot.style_line)
+
+pRsi5 = plot(rsi5On and rsi5Plot ? rsi5Value : na, title = "RSI 5", color = rsi5RsiLineColor, linewidth = rsi5Width, style = plot.style_line)
+pRsi5Sig = plot(rsi5On and rsi5PlotSignal ? rsi5SignalValue : na, title = "RSI 5 Signal", color = rsi5SignalLineColor, linewidth = rsi5SignalWidth, style = plot.style_line)
+
+// TTM squeeze histogram, dots, and squeeze-release labels.
+plot(ttmOn and ttmShowBaseline ? ttmDisplayBaseline : na, title = "TTM Baseline", color = color.new(color.gray, 60), linewidth = 1)
+plot(ttmOn and ttmShowHistogram ? ttmHistPlot : na, title = "TTM Histogram", style = plot.style_columns, color = ttmHistPlotColor, linewidth = 2)
+plot(ttmOn and ttmShowDots ? ttmDotY : na, title = "TTM Squeeze Dots", style = plot.style_circles, color = ttmDotPlotColor, linewidth = 4)
+
+// Confluence engine and consensus highlight.
+int stochBullCount = (stoch1On and stoch1BullSignal ? 1 : 0) + (stoch2On and stoch2BullSignal ? 1 : 0) + (stoch3On and stoch3BullSignal ? 1 : 0) + (stoch4On and stoch4BullSignal ? 1 : 0) + (stoch5On and stoch5BullSignal ? 1 : 0)
+int stochBearCount = (stoch1On and stoch1BearSignal ? 1 : 0) + (stoch2On and stoch2BearSignal ? 1 : 0) + (stoch3On and stoch3BearSignal ? 1 : 0) + (stoch4On and stoch4BearSignal ? 1 : 0) + (stoch5On and stoch5BearSignal ? 1 : 0)
+int rsiBullCount = (rsi1On and rsi1BullSignal ? 1 : 0) + (rsi2On and rsi2BullSignal ? 1 : 0) + (rsi3On and rsi3BullSignal ? 1 : 0) + (rsi4On and rsi4BullSignal ? 1 : 0) + (rsi5On and rsi5BullSignal ? 1 : 0)
+int rsiBearCount = (rsi1On and rsi1BearSignal ? 1 : 0) + (rsi2On and rsi2BearSignal ? 1 : 0) + (rsi3On and rsi3BearSignal ? 1 : 0) + (rsi4On and rsi4BearSignal ? 1 : 0) + (rsi5On and rsi5BearSignal ? 1 : 0)
+int consensusScore = stochBullCount + rsiBullCount - stochBearCount - rsiBearCount
+bool bullConfluence = effectiveShowConfluence and stochBullCount >= bullStochRequired and rsiBullCount >= bullRsiRequired and (not requireBullTtmFire or ttmFireBull)
+bool bearConfluence = effectiveShowConfluence and stochBearCount >= bearStochRequired and rsiBearCount >= bearRsiRequired and (not requireBearTtmFire or ttmFireBear)
+color stochBgActive = stoch1On and stoch1ShowBg and not effectiveMinimalMode and not na(stoch1BgColor) ? stoch1BgColor : stoch2On and stoch2ShowBg and not effectiveMinimalMode and not na(stoch2BgColor) ? stoch2BgColor : stoch3On and stoch3ShowBg and not effectiveMinimalMode and not na(stoch3BgColor) ? stoch3BgColor : stoch4On and stoch4ShowBg and not effectiveMinimalMode and not na(stoch4BgColor) ? stoch4BgColor : stoch5On and stoch5ShowBg and not effectiveMinimalMode and not na(stoch5BgColor) ? stoch5BgColor : na
+color rsiBgActive = rsi1On and rsi1ShowBg and not effectiveMinimalMode and not na(rsi1BgColor) ? rsi1BgColor : rsi2On and rsi2ShowBg and not effectiveMinimalMode and not na(rsi2BgColor) ? rsi2BgColor : rsi3On and rsi3ShowBg and not effectiveMinimalMode and not na(rsi3BgColor) ? rsi3BgColor : rsi4On and rsi4ShowBg and not effectiveMinimalMode and not na(rsi4BgColor) ? rsi4BgColor : rsi5On and rsi5ShowBg and not effectiveMinimalMode and not na(rsi5BgColor) ? rsi5BgColor : na
+color compressionBg = ttmOn and effectiveShowCompressionBg and ttmSelectedSqOn ? color.new(ttmPulseColor, ttmPulseTransp) : na
+color pulseBg = ttmOn and effectivePulseBg and ta.barssince(ttmSqueezeRelease) <= ttmPulseBars ? color.new(ttmPulseColor, ttmPulseTransp) : na
+color consensusBg = effectiveHighlightConsensus and consensusScore >= 4 ? color.new(color.lime, 94) : effectiveHighlightConsensus and consensusScore <= -4 ? color.new(color.red, 94) : na
+color compositeBg = not na(consensusBg) ? consensusBg : not na(pulseBg) ? pulseBg : not na(compressionBg) ? compressionBg : not na(stochBgActive) ? stochBgActive : rsiBgActive
+bgcolor(compositeBg)
+f_emit_signal_label(stoch1On and stoch1ShowMarkers and not effectiveMinimalMode, stoch1CrossUp, stoch1K, "S1", true, stoch1KLineColor, color.white)
+f_emit_signal_label(stoch1On and stoch1ShowMarkers and not effectiveMinimalMode, stoch1CrossDown, stoch1K, "S1", false, stoch1DLineColor, color.white)
+f_emit_signal_label(stoch2On and stoch2ShowMarkers and not effectiveMinimalMode, stoch2CrossUp, stoch2K, "S2", true, stoch2KLineColor, color.white)
+f_emit_signal_label(stoch2On and stoch2ShowMarkers and not effectiveMinimalMode, stoch2CrossDown, stoch2K, "S2", false, stoch2DLineColor, color.white)
+f_emit_signal_label(stoch3On and stoch3ShowMarkers and not effectiveMinimalMode, stoch3CrossUp, stoch3K, "S3", true, stoch3KLineColor, color.white)
+f_emit_signal_label(stoch3On and stoch3ShowMarkers and not effectiveMinimalMode, stoch3CrossDown, stoch3K, "S3", false, stoch3DLineColor, color.white)
+f_emit_signal_label(stoch4On and stoch4ShowMarkers and not effectiveMinimalMode, stoch4CrossUp, stoch4K, "S4", true, stoch4KLineColor, color.white)
+f_emit_signal_label(stoch4On and stoch4ShowMarkers and not effectiveMinimalMode, stoch4CrossDown, stoch4K, "S4", false, stoch4DLineColor, color.white)
+f_emit_signal_label(stoch5On and stoch5ShowMarkers and not effectiveMinimalMode, stoch5CrossUp, stoch5K, "S5", true, stoch5KLineColor, color.white)
+f_emit_signal_label(stoch5On and stoch5ShowMarkers and not effectiveMinimalMode, stoch5CrossDown, stoch5K, "S5", false, stoch5DLineColor, color.white)
+f_emit_signal_label(rsi1On and rsi1ShowMarkers and not effectiveMinimalMode, rsi1CrossAboveSignal, rsi1Value, "R1", true, rsi1RsiLineColor, color.white)
+f_emit_signal_label(rsi1On and rsi1ShowMarkers and not effectiveMinimalMode, rsi1CrossBelowSignal, rsi1Value, "R1", false, rsi1SignalLineColor, color.white)
+f_emit_signal_label(rsi2On and rsi2ShowMarkers and not effectiveMinimalMode, rsi2CrossAboveSignal, rsi2Value, "R2", true, rsi2RsiLineColor, color.white)
+f_emit_signal_label(rsi2On and rsi2ShowMarkers and not effectiveMinimalMode, rsi2CrossBelowSignal, rsi2Value, "R2", false, rsi2SignalLineColor, color.white)
+f_emit_signal_label(rsi3On and rsi3ShowMarkers and not effectiveMinimalMode, rsi3CrossAboveSignal, rsi3Value, "R3", true, rsi3RsiLineColor, color.white)
+f_emit_signal_label(rsi3On and rsi3ShowMarkers and not effectiveMinimalMode, rsi3CrossBelowSignal, rsi3Value, "R3", false, rsi3SignalLineColor, color.white)
+f_emit_signal_label(rsi4On and rsi4ShowMarkers and not effectiveMinimalMode, rsi4CrossAboveSignal, rsi4Value, "R4", true, rsi4RsiLineColor, color.white)
+f_emit_signal_label(rsi4On and rsi4ShowMarkers and not effectiveMinimalMode, rsi4CrossBelowSignal, rsi4Value, "R4", false, rsi4SignalLineColor, color.white)
+f_emit_signal_label(rsi5On and rsi5ShowMarkers and not effectiveMinimalMode, rsi5CrossAboveSignal, rsi5Value, "R5", true, rsi5RsiLineColor, color.white)
+f_emit_signal_label(rsi5On and rsi5ShowMarkers and not effectiveMinimalMode, rsi5CrossBelowSignal, rsi5Value, "R5", false, rsi5SignalLineColor, color.white)
+f_emit_signal_label(ttmOn and ttmShowReleaseLabels, ttmFireBull, ttmDotY, "BULL", true, ttmDotOnColor, color.white)
+f_emit_signal_label(ttmOn and ttmShowReleaseLabels, ttmFireBear, ttmDotY, "BEAR", false, ttmDotOffColor, color.white)
+
+// -----------------------------------------------------------------------------
+// 15. Table / dashboard
+// -----------------------------------------------------------------------------
+if barstate.islast
+    if effectiveShowTable
+        f_table_cell(dashboardTbl, 0, 0, "Module", chart.fg_color, color.new(color.black, 65))
+        f_table_cell(dashboardTbl, 1, 0, "Value 1", chart.fg_color, color.new(color.black, 65))
+        f_table_cell(dashboardTbl, 2, 0, "Value 2", chart.fg_color, color.new(color.black, 65))
+        f_table_cell(dashboardTbl, 3, 0, "State", chart.fg_color, color.new(color.black, 65))
+        f_table_cell(dashboardTbl, 4, 0, "Cross", chart.fg_color, color.new(color.black, 65))
+        f_table_cell(dashboardTbl, 5, 0, "Extra", chart.fg_color, color.new(color.black, 65))
+
+        int dashRow = 1
+        if stoch1Enable or not showOnlyActiveModules
+            string stoch1TableState = stoch1Enable ? (stoch1CrossUp ? "Bull Cross" : stoch1CrossDown ? "Bear Cross" : stoch1State) : "OFF"
+            string stoch1Extra = stoch1Enable ? "raw " + f_fmt_num(stoch1Raw) : "disabled"
+            f_write_row(dashboardTbl, dashRow, "S1", stoch1Enable ? f_fmt_num(stoch1K) : "-", stoch1Enable ? f_fmt_num(stoch1D) : "-", stoch1TableState, f_cross_text(stoch1CrossUp, stoch1CrossDown), stoch1Extra, stoch1Enable, dimInactiveModules)
+            dashRow += 1
+        if stoch2Enable or not showOnlyActiveModules
+            string stoch2TableState = stoch2Enable ? (stoch2CrossUp ? "Bull Cross" : stoch2CrossDown ? "Bear Cross" : stoch2State) : "OFF"
+            string stoch2Extra = stoch2Enable ? "raw " + f_fmt_num(stoch2Raw) : "disabled"
+            f_write_row(dashboardTbl, dashRow, "S2", stoch2Enable ? f_fmt_num(stoch2K) : "-", stoch2Enable ? f_fmt_num(stoch2D) : "-", stoch2TableState, f_cross_text(stoch2CrossUp, stoch2CrossDown), stoch2Extra, stoch2Enable, dimInactiveModules)
+            dashRow += 1
+        if stoch3Enable or not showOnlyActiveModules
+            string stoch3TableState = stoch3Enable ? (stoch3CrossUp ? "Bull Cross" : stoch3CrossDown ? "Bear Cross" : stoch3State) : "OFF"
+            string stoch3Extra = stoch3Enable ? "raw " + f_fmt_num(stoch3Raw) : "disabled"
+            f_write_row(dashboardTbl, dashRow, "S3", stoch3Enable ? f_fmt_num(stoch3K) : "-", stoch3Enable ? f_fmt_num(stoch3D) : "-", stoch3TableState, f_cross_text(stoch3CrossUp, stoch3CrossDown), stoch3Extra, stoch3Enable, dimInactiveModules)
+            dashRow += 1
+        if stoch4Enable or not showOnlyActiveModules
+            string stoch4TableState = stoch4Enable ? (stoch4CrossUp ? "Bull Cross" : stoch4CrossDown ? "Bear Cross" : stoch4State) : "OFF"
+            string stoch4Extra = stoch4Enable ? "raw " + f_fmt_num(stoch4Raw) : "disabled"
+            f_write_row(dashboardTbl, dashRow, "S4", stoch4Enable ? f_fmt_num(stoch4K) : "-", stoch4Enable ? f_fmt_num(stoch4D) : "-", stoch4TableState, f_cross_text(stoch4CrossUp, stoch4CrossDown), stoch4Extra, stoch4Enable, dimInactiveModules)
+            dashRow += 1
+        if stoch5Enable or not showOnlyActiveModules
+            string stoch5TableState = stoch5Enable ? (stoch5CrossUp ? "Bull Cross" : stoch5CrossDown ? "Bear Cross" : stoch5State) : "OFF"
+            string stoch5Extra = stoch5Enable ? "raw " + f_fmt_num(stoch5Raw) : "disabled"
+            f_write_row(dashboardTbl, dashRow, "S5", stoch5Enable ? f_fmt_num(stoch5K) : "-", stoch5Enable ? f_fmt_num(stoch5D) : "-", stoch5TableState, f_cross_text(stoch5CrossUp, stoch5CrossDown), stoch5Extra, stoch5Enable, dimInactiveModules)
+            dashRow += 1
+
+        if rsi1Enable or not showOnlyActiveModules
+            string rsi1TableState = rsi1Enable ? (rsi1CrossAboveSignal ? "Bull Cross" : rsi1CrossBelowSignal ? "Bear Cross" : rsi1State) : "OFF"
+            string rsi1Extra = rsi1Enable ? "ext " + f_fmt_num(rsi1ExtremeUpper) + "/" + f_fmt_num(rsi1ExtremeLower) : "disabled"
+            f_write_row(dashboardTbl, dashRow, "R1", rsi1Enable ? f_fmt_num(rsi1Value) : "-", rsi1Enable ? f_fmt_num(rsi1SignalValue) : "-", rsi1TableState, f_cross_text(rsi1CrossAboveSignal, rsi1CrossBelowSignal), rsi1Extra, rsi1Enable, dimInactiveModules)
+            dashRow += 1
+        if rsi2Enable or not showOnlyActiveModules
+            string rsi2TableState = rsi2Enable ? (rsi2CrossAboveSignal ? "Bull Cross" : rsi2CrossBelowSignal ? "Bear Cross" : rsi2State) : "OFF"
+            string rsi2Extra = rsi2Enable ? "ext " + f_fmt_num(rsi2ExtremeUpper) + "/" + f_fmt_num(rsi2ExtremeLower) : "disabled"
+            f_write_row(dashboardTbl, dashRow, "R2", rsi2Enable ? f_fmt_num(rsi2Value) : "-", rsi2Enable ? f_fmt_num(rsi2SignalValue) : "-", rsi2TableState, f_cross_text(rsi2CrossAboveSignal, rsi2CrossBelowSignal), rsi2Extra, rsi2Enable, dimInactiveModules)
+            dashRow += 1
+        if rsi3Enable or not showOnlyActiveModules
+            string rsi3TableState = rsi3Enable ? (rsi3CrossAboveSignal ? "Bull Cross" : rsi3CrossBelowSignal ? "Bear Cross" : rsi3State) : "OFF"
+            string rsi3Extra = rsi3Enable ? "ext " + f_fmt_num(rsi3ExtremeUpper) + "/" + f_fmt_num(rsi3ExtremeLower) : "disabled"
+            f_write_row(dashboardTbl, dashRow, "R3", rsi3Enable ? f_fmt_num(rsi3Value) : "-", rsi3Enable ? f_fmt_num(rsi3SignalValue) : "-", rsi3TableState, f_cross_text(rsi3CrossAboveSignal, rsi3CrossBelowSignal), rsi3Extra, rsi3Enable, dimInactiveModules)
+            dashRow += 1
+        if rsi4Enable or not showOnlyActiveModules
+            string rsi4TableState = rsi4Enable ? (rsi4CrossAboveSignal ? "Bull Cross" : rsi4CrossBelowSignal ? "Bear Cross" : rsi4State) : "OFF"
+            string rsi4Extra = rsi4Enable ? "ext " + f_fmt_num(rsi4ExtremeUpper) + "/" + f_fmt_num(rsi4ExtremeLower) : "disabled"
+            f_write_row(dashboardTbl, dashRow, "R4", rsi4Enable ? f_fmt_num(rsi4Value) : "-", rsi4Enable ? f_fmt_num(rsi4SignalValue) : "-", rsi4TableState, f_cross_text(rsi4CrossAboveSignal, rsi4CrossBelowSignal), rsi4Extra, rsi4Enable, dimInactiveModules)
+            dashRow += 1
+        if rsi5Enable or not showOnlyActiveModules
+            string rsi5TableState = rsi5Enable ? (rsi5CrossAboveSignal ? "Bull Cross" : rsi5CrossBelowSignal ? "Bear Cross" : rsi5State) : "OFF"
+            string rsi5Extra = rsi5Enable ? "ext " + f_fmt_num(rsi5ExtremeUpper) + "/" + f_fmt_num(rsi5ExtremeLower) : "disabled"
+            f_write_row(dashboardTbl, dashRow, "R5", rsi5Enable ? f_fmt_num(rsi5Value) : "-", rsi5Enable ? f_fmt_num(rsi5SignalValue) : "-", rsi5TableState, f_cross_text(rsi5CrossAboveSignal, rsi5CrossBelowSignal), rsi5Extra, rsi5Enable, dimInactiveModules)
+            dashRow += 1
+
+        if ttmShowInDashboard or diagnosticMode
+            string ttmCrossTxt = ttmFireBull ? "FIRE BULL" : ttmFireBear ? "FIRE BEAR" : ttmSelectedSqOn ? "ON" : ttmSelectedSqOff ? "OFF" : "-"
+            string ttmCounterText = ttmShowDurationCounter ? " / dur " + f_fmt_int(ttmDurationBars) + " / since " + f_fmt_int(ttmBarsSinceRelease) : ""
+            string ttmExtra = "heat " + f_fmt_num(ttmCompressionHeat) + "%" + ttmCounterText
+            f_write_row(dashboardTbl, dashRow, "TTM", f_fmt_num(ttmSelectedMomSmooth), f_fmt_num(ttmSelectedMomRaw), ttmState, ttmCrossTxt, ttmExtra, ttmEnable, dimInactiveModules)
+            dashRow += 1
+
+        string consensusState = consensusScore >= 4 ? "Strong Bull" : consensusScore <= -4 ? "Strong Bear" : consensusScore > 0 ? "Bull" : consensusScore < 0 ? "Bear" : "Neutral"
+        f_write_row(dashboardTbl, dashRow, "Consensus", str.tostring(consensusScore), "S" + str.tostring(stochBullCount - stochBearCount) + " / R" + str.tostring(rsiBullCount - rsiBearCount), consensusState, bullConfluence ? "BULL" : bearConfluence ? "BEAR" : "-", "TTM fire " + (ttmFireBull ? "bull" : ttmFireBear ? "bear" : "none"), true, dimInactiveModules)
+        dashRow += 1
+
+        while dashRow < 16
+            f_blank_row(dashboardTbl, dashRow)
+            dashRow += 1
+    else
+        int blankRow = 0
+        while blankRow < 16
+            f_blank_row(dashboardTbl, blankRow)
+            blankRow += 1
+
+    // Right-side labels are updated only on the last bar so they do not spam objects.
+    if effectiveShowLabels
+        f_update_last_label(rightLabels, 0, stoch1Enable, stoch1K, "S1 K " + f_fmt_num(stoch1K) + " / D " + f_fmt_num(stoch1D), color.white, stoch1KLineColor)
+        f_update_last_label(rightLabels, 1, stoch2Enable, stoch2K, "S2 K " + f_fmt_num(stoch2K) + " / D " + f_fmt_num(stoch2D), color.white, stoch2KLineColor)
+        f_update_last_label(rightLabels, 2, stoch3Enable, stoch3K, "S3 K " + f_fmt_num(stoch3K) + " / D " + f_fmt_num(stoch3D), color.white, stoch3KLineColor)
+        f_update_last_label(rightLabels, 3, stoch4Enable, stoch4K, "S4 K " + f_fmt_num(stoch4K) + " / D " + f_fmt_num(stoch4D), color.white, stoch4KLineColor)
+        f_update_last_label(rightLabels, 4, stoch5Enable, stoch5K, "S5 K " + f_fmt_num(stoch5K) + " / D " + f_fmt_num(stoch5D), color.white, stoch5KLineColor)
+        f_update_last_label(rightLabels, 5, rsi1Enable, rsi1Value, "R1 " + f_fmt_num(rsi1Value) + " / S " + f_fmt_num(rsi1SignalValue), color.white, rsi1RsiLineColor)
+        f_update_last_label(rightLabels, 6, rsi2Enable, rsi2Value, "R2 " + f_fmt_num(rsi2Value) + " / S " + f_fmt_num(rsi2SignalValue), color.white, rsi2RsiLineColor)
+        f_update_last_label(rightLabels, 7, rsi3Enable, rsi3Value, "R3 " + f_fmt_num(rsi3Value) + " / S " + f_fmt_num(rsi3SignalValue), color.white, rsi3RsiLineColor)
+        f_update_last_label(rightLabels, 8, rsi4Enable, rsi4Value, "R4 " + f_fmt_num(rsi4Value) + " / S " + f_fmt_num(rsi4SignalValue), color.white, rsi4RsiLineColor)
+        f_update_last_label(rightLabels, 9, rsi5Enable, rsi5Value, "R5 " + f_fmt_num(rsi5Value) + " / S " + f_fmt_num(rsi5SignalValue), color.white, rsi5RsiLineColor)
+        f_update_last_label(rightLabels, 10, ttmEnable, ttmHistPlot, "TTM " + f_fmt_num(ttmSelectedMomSmooth) + " / " + (ttmSelectedSqOn ? "ON" : ttmSelectedSqOff ? "OFF" : "NONE") + (ttmShowDurationCounter ? " / dur " + f_fmt_int(ttmDurationBars) : ""), color.white, ttmDotPlotColor)
+    else
+        int labelIdx = 0
+        while labelIdx < 11
+            f_update_last_label(rightLabels, labelIdx, false, na, "", color.white, color.new(color.black, 100))
+            labelIdx += 1

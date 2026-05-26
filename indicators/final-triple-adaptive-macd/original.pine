@@ -1,0 +1,203 @@
+//@version=5
+indicator("Final Triple Adaptive MACD", "Final Triple Adaptive MACD", overlay=true)
+
+
+//-----------------------------------------------------------------------------{
+//Inputs
+//-----------------------------------------------------------------------------{
+
+macd1SettingsGroup = "MACD 1 Settings"
+length_1 = input.int(15, title='R2 Period 1', minval=2, group=macd1SettingsGroup)
+fast_1 = input.int(5, title='Fast Length 1', minval=2, group=macd1SettingsGroup)
+slow_1 = input.int(21, title='Slow Length 1', minval=2, group=macd1SettingsGroup)
+signal_1 = input.int(8, title='Signal Length 1', minval=2, group=macd1SettingsGroup)
+
+macd2SettingsGroup = "MACD 2 Settings"
+length_2 = input.int(15, title='R2 Period 2', minval=2, group=macd2SettingsGroup)
+fast_2 = input.int(65, title='Fast Length 2', minval=2, group=macd2SettingsGroup)
+slow_2 = input.int(270, title='Slow Length 2', minval=2, group=macd2SettingsGroup)
+signal_2 = input.int(105, title='Signal Length 2', minval=2, group=macd2SettingsGroup)
+
+macd3SettingsGroup = "MACD 3 Settings"
+length_3 = input.int(15, title='R2 Period 3', minval=2, group=macd3SettingsGroup)
+fast_3 = input.int(21, title='Fast Length 3', minval=2, group=macd3SettingsGroup)
+slow_3 = input.int(144, title='Slow Length 3', minval=2, group=macd3SettingsGroup)
+signal_3 = input.int(34, title='Signal Length 3', minval=2, group=macd3SettingsGroup)
+
+
+//-----------------------------------------------------------------------------{
+//Toggles in Menu
+//-----------------------------------------------------------------------------{
+
+// Input: Toggle for plotting histograms
+plotWithMACD = input(true, title="Plot MACD Lines")
+
+// Input: Toggle for plotting signal lines
+plotWithSignalLines = input(true, title="Plot Signal Lines")
+
+//-----------------------------------------------------------------------------{
+//MACD Calculations
+//-----------------------------------------------------------------------------{
+
+
+// === Ultimate MACD 1 ===
+var macd_1 = 0.0
+var lag_1 = (signal_1 - 1) / 2
+var a1_1 = 2 / (fast_1 + 1)
+var a2_1 = 2 / (slow_1 + 1)
+
+r2_1 = 0.5 * math.pow(ta.correlation(close, bar_index, length_1), 2) + 0.5
+K_1 = r2_1 * ((1 - a1_1) * (1 - a2_1)) + (1 - r2_1) * ((1 - a1_1) / (1 - a2_1))
+
+macd_1 := (close - close[1]) * (a1_1 - a2_1) + (-a2_1 - a1_1 + 2) * nz(macd_1[1]) - K_1 * nz(macd_1[2])
+ema_1 = ta.ema(macd_1, signal_1)
+hist_1 = macd_1 - ema_1
+
+// === Ultimate MACD 2 ===
+var macd_2 = 0.0
+var lag_2 = (signal_2 - 1) / 2
+var a1_2 = 2 / (fast_2 + 1)
+var a2_2 = 2 / (slow_2 + 1)
+
+r2_2 = 0.5 * math.pow(ta.correlation(close, bar_index, length_2), 2) + 0.5
+K_2 = r2_2 * ((1 - a1_2) * (1 - a2_2)) + (1 - r2_2) * ((1 - a1_2) / (1 - a2_2))
+
+macd_2 := (close - close[1]) * (a1_2 - a2_2) + (-a2_2 - a1_2 + 2) * nz(macd_2[1]) - K_2 * nz(macd_2[2])
+ema_2 = ta.ema(macd_2, signal_2)
+hist_2 = macd_2 - ema_2
+
+// === Ultimate MACD 3 ===
+var macd_3 = 0.0
+var lag_3 = (signal_3 - 1) / 2
+var a1_3 = 2 / (fast_3 + 1)
+var a2_3 = 2 / (slow_3 + 1)
+
+r2_3 = 0.5 * math.pow(ta.correlation(close, bar_index, length_3), 2) + 0.5
+K_3 = r2_3 * ((1 - a1_3) * (1 - a2_3)) + (1 - r2_3) * ((1 - a1_3) / (1 - a2_3))
+
+macd_3 := (close - close[1]) * (a1_3 - a2_3) + (-a2_3 - a1_3 + 2) * nz(macd_3[1]) - K_3 * nz(macd_3[2])
+ema_3 = ta.ema(macd_3, signal_3)
+hist_3 = macd_3 - ema_3
+
+
+//-----------------------------------------------------------------------------{
+//Background Colors
+//-----------------------------------------------------------------------------{
+
+// Background Color Overlay
+bgcolorOverlayGroup = "Background Color Overlay"
+
+overlayBackgroundColor = input(false, title="Overlay Background Color", group=bgcolorOverlayGroup)
+
+backgroundCondition = hist_1 > 0 and hist_2 > 0 and hist_3 > 0 and ema_1 > 0 and ema_2 > 0 and ema_3 > 0
+bgcolor(overlayBackgroundColor and backgroundCondition ? color.new(color.green, 80) : na, title="Histogram and Signal Lines Buy")
+
+backgroundConditionOpposite = hist_1 < 0 and hist_2 < 0 and hist_3 < 0 and ema_1 < 0 and ema_2 < 0 and ema_3 < 0
+bgcolor(overlayBackgroundColor and backgroundConditionOpposite ? color.new(color.red, 80) : na, title="Histogram and Signal Lines Sell")
+
+backgroundCondition2 = hist_1 > 0 and hist_2 > 0 and hist_3 > 0
+bgcolor(overlayBackgroundColor and backgroundCondition2 ? color.new(color.green, 80) : na, title="Histogram Only Buy")
+
+backgroundConditionOpposite2 = hist_1 < 0 and hist_2 < 0 and hist_3 < 0
+bgcolor(overlayBackgroundColor and backgroundConditionOpposite2 ? color.new(color.red, 80) : na, title="Histogram Only Sell")
+
+backgroundCondition3 = hist_1 > 0 and hist_2 > 0 and hist_3 > 0 and ema_1 > 0 and ema_2 > 0
+bgcolor(overlayBackgroundColor and backgroundCondition3 ? color.new(color.green, 80) : na, title="Histogram and Short/Mid Signal Lines Buy")
+
+backgroundConditionOpposite3 = hist_1 < 0 and hist_2 < 0 and hist_3 < 0 and ema_1 < 0 and ema_2 < 0
+bgcolor(overlayBackgroundColor and backgroundConditionOpposite3 ? color.new(color.red, 80) : na, title="Histogram and Short/Mid Signal Lines Sell")
+
+backgroundCondition4 = hist_1 > 0 and hist_2 > 0 and hist_3 > 0 and ema_1 > 0
+bgcolor(overlayBackgroundColor and backgroundCondition4 ? color.new(color.green, 80) : na, title="Histogram and Short Signal Line Buy")
+
+backgroundConditionOpposite4 = hist_1 < 0 and hist_2 < 0 and hist_3 < 0 and ema_1 < 0
+bgcolor(overlayBackgroundColor and backgroundConditionOpposite4 ? color.new(color.red, 80) : na, title="Histogram and Short Signal Line Sell")
+
+backgroundCondition5 = hist_1 > 0 and hist_2 > 0 and hist_3 > 0 and ema_2 > 0
+bgcolor(overlayBackgroundColor and backgroundCondition5 ? color.new(color.green, 80) : na, title="Histogram and Mid Signal Line Buy")
+
+backgroundConditionOpposite5 = hist_1 < 0 and hist_2 < 0 and hist_3 < 0 and ema_2 < 0
+bgcolor(overlayBackgroundColor and backgroundConditionOpposite5 ? color.new(color.red, 80) : na, title="Histogram and Mid Signal Line Sell")
+
+//-----------------------------------------------------------------------------{
+//Histogram Colors
+//-----------------------------------------------------------------------------{
+
+// === Plots ===
+histColor_1 = hist_1 > 0 ? #5b9cf6d8 : #f77c80c3
+outlineColor_1 = color.new(#000000, 0)  // Solid black with maximum transparency (0)
+
+histColor_2 = hist_2 > 0 ? #5b9cf67b : #f77c8080
+outlineColor_2 = color.new(#000000, 0)  // Solid black with maximum transparency (0)
+
+histColor_3 = hist_3 > 0 ? #5b9cf64e : #f77c8050 
+outlineColor_3 = color.new(#000000, 0)  // Solid black with maximum transparency (0)
+// Zero Line
+hline(0, 'Zero Line', color=color.rgb(0, 0, 0))
+
+
+//-----------------------------------------------------------------------------{
+//MACDs
+//-----------------------------------------------------------------------------{
+
+// Plot MACD 1
+plot(plotWithMACD ? macd_1 : na, 'MACD 1', color=color.new(#07275c, 0), linewidth=2)
+plot(plotWithSignalLines ? ema_1 : na, 'Signal 1', color=#ff5d00)
+
+// Plot MACD 2
+plot(plotWithMACD ? macd_2 : na, 'MACD 2', color=color.new(#07275c, 0), linewidth=2)
+plot(plotWithSignalLines ? ema_2 : na, 'Signal 2', color=#ff5d00)
+
+// Plot MACD 3
+plot(plotWithMACD ? macd_3 : na, 'MACD 3', color=color.new(#07275c, 0), linewidth=2)
+plot(plotWithSignalLines ? ema_3 : na, 'Signal 3', color=#ff5d00)
+
+//-----------------------------------------------------------------------------{
+//Histograms
+//-----------------------------------------------------------------------------{
+
+// === Plot Histogram 1 ===
+plot(hist_1, 'Histogram 1', histColor_1, 1, plot.style_area)
+plot(hist_1, 'Histogram Outline 1', style=plot.style_line, color=outlineColor_1, linewidth=1)
+
+// === Plot Histogram 2 ===
+plot(hist_2, 'Histogram 2', histColor_2, 1, plot.style_area)
+plot(hist_2, 'Histogram Outline 2', style=plot.style_line, color=outlineColor_2, linewidth=1)
+
+// === Plot Histogram 3 ===
+plot(hist_3, 'Histogram 3', histColor_3, 1, plot.style_area)
+plot(hist_3, 'Histogram Outline 3', style=plot.style_line, color=outlineColor_3, linewidth=1)
+
+
+
+//-----------------------------------------------------------------------------{
+// Fibonacci Levels
+//-----------------------------------------------------------------------------{
+
+
+// Positive Fib Level Lines
+hline(1, 'Fib 1', color=color.black, linestyle=hline.style_solid, linewidth=1)
+hline(2, 'Fib 2', color=color.black, linestyle=hline.style_solid, linewidth=1)
+hline(3, 'Fib 3', color=color.black, linestyle=hline.style_solid, linewidth=1)
+hline(5, 'Fib 4', color=color.black, linestyle=hline.style_solid, linewidth=1)
+hline(8, 'Fib 8', color=color.black, linestyle=hline.style_solid, linewidth=1)
+hline(13, 'Fib 13', color=color.black, linestyle=hline.style_solid, linewidth=1)
+hline(21, 'Fib 21', color=color.black, linestyle=hline.style_solid, linewidth=1)
+hline(34, 'Fib 34', color=color.black, linestyle=hline.style_solid, linewidth=1)
+hline(55, 'Fib 55', color=color.black, linestyle=hline.style_solid, linewidth=1)
+hline(89, 'Fib 89', color=color.black, linestyle=hline.style_solid, linewidth=1)
+hline(144, 'Fib 144', color=color.black, linestyle=hline.style_solid, linewidth=1)
+
+
+// Negative Fib Level Lines
+hline(-1, 'Fib 1', color=color.black, linestyle=hline.style_solid, linewidth=1)
+hline(-2, 'Fib 2', color=color.black, linestyle=hline.style_solid, linewidth=1)
+hline(-3, 'Fib 3', color=color.black, linestyle=hline.style_solid, linewidth=1)
+hline(-5, 'Fib 4', color=color.black, linestyle=hline.style_solid, linewidth=1)
+hline(-8, 'Fib 8', color=color.black, linestyle=hline.style_solid, linewidth=1)
+hline(-13, 'Fib 13', color=color.black, linestyle=hline.style_solid, linewidth=1)
+hline(-21, 'Fib 21', color=color.black, linestyle=hline.style_solid, linewidth=1)
+hline(-34, 'Fib 34', color=color.black, linestyle=hline.style_solid, linewidth=1)
+hline(-55, 'Fib 55', color=color.black, linestyle=hline.style_solid, linewidth=1)
+hline(-89, 'Fib 89', color=color.black, linestyle=hline.style_solid, linewidth=1)
+hline(-144, 'Fib 144', color=color.black, linestyle=hline.style_solid, linewidth=1)
