@@ -1,0 +1,62 @@
+# OS junk
+.DS_Store
+Thumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+.Spotlight-V100/
+.Trashes/
+
+# Editor and IDE folders
+.idea/
+.vscode/
+.vs/
+
+# Temporary and backup files
+*.tmp
+*.temp
+*.bak
+*.orig
+*.swp
+*.swo
+*.~*
+*~
+
+# Logs
+*.log
+logs/
+
+# Local private notes
+private-notes/
+notes-private/
+*.local.md
+
+# Secrets and environment files
+.env
+.env.*
+*.env
+*.secret
+secrets/
+
+# Build and export folders
+build/
+dist/
+out/
+exports/
+release/
+
+# Python cache and virtual environments
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.venv/
+venv/
+env/
+
+# Coverage and test artifacts
+.coverage
+coverage/
+htmlcov/
