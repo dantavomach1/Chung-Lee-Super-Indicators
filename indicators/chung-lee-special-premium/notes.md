@@ -6,7 +6,7 @@ Overlay indicator that combines higher-timeframe candle overlays, structural zon
 
 ## Current Behavior
 
-Draws 1H, 4H, and daily candle overlays with optional labels, structural stack and gap zones, an HTF distance table, optional moving averages, Bollinger Bands, session shading, and a futures value reference table. Breakout zones can display as exact-anchor boxes, floating-window boxes, or fill-between-candles areas that follow the same plot/fill style used by Session High/Low Fill.
+Draws 1H, 4H, and daily candle overlays with optional labels, structural stack and gap zones, an HTF distance table, optional moving averages, Bollinger Bands, session shading, and a futures value reference table. Breakout zones can display as exact-anchor boxes, floating-window boxes, or fill-between-candles areas drawn with capped object-based box strips to avoid adding plot counts.
 
 ## Inputs
 
