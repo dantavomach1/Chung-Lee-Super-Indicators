@@ -119,6 +119,13 @@ clStackLabelSizeInput         = input.string("Small", "Stack Zone label size", o
 clShowStackAnchorMarkers      = input.bool(false, "Show Stack Zone anchor markers", group=groupStackZones, tooltip="Optional quiet markers for the exact prior-day and latest closed 4H high/low anchor bars.")
 clStackLeftAnchorMode         = input.string("Actual referenced points", "Stack Zone left anchor mode", options=["Actual referenced points"], group=groupStackZones)
 clExtendStackZonesRight       = input.bool(true, "Extend Stack Zones Right", group=groupStackZones)
+clBreakoutZoneDisplayMode     = input.string("Exact Anchor", "Breakout Zone Display Mode", options=["Exact Anchor", "Floating Window", "Fill Between Candles"], group=groupStackZones)
+clFloatingWindowBarsBack      = input.int(5, "Floating Window Bars Back", minval=0, group=groupStackZones)
+clFloatingWindowBarsForward   = input.int(75, "Floating Window Bars Forward", minval=1, group=groupStackZones)
+clShowPointsTillBreakLabels   = input.bool(true, "Show Points Till Break Labels", group=groupStackZones)
+clPointsTillBreakOffsetBars   = input.int(10, "Points Till Break Label Offset Bars", minval=0, group=groupStackZones)
+clPointsTillBreakLabelTextColor = input.color(color.new(color.white, 0), "Points Till Break Label Text Color", group=groupStackZones)
+clPointsTillBreakLabelSizeInput = input.string("Small", "Points Till Break Label Size", options=["Tiny", "Small", "Normal", "Large"], group=groupStackZones)
 
 clShowWeeklyDailyStackZones              = input.bool(false, "Show Weekly / Daily Stack Zones", group=groupWeeklyStackZones)
 clShowUpperWeeklyDailyStackZone          = input.bool(true, "Show Upper Weekly / Daily Stack Zone", group=groupWeeklyStackZones, inline="wd1")
@@ -309,6 +316,10 @@ f_symbol_root() =>
 f_money(_v) =>
     "$" + str.tostring(_v, "#,##0.00")
 
+f_points_text(_v) =>
+    cleanValue = math.max(nz(_v, 0.0), 0.0)
+    str.tostring(f_round_to_tick(cleanValue), format.mintick) + " pts till break"
+
 f_normalize_token(_s) =>
     str.upper(str.replace_all(_s, " ", ""))
 
@@ -347,6 +358,21 @@ f_update_zone_box(_box, _left, _right, _top, _bottom, _bgColor, _borderColor, _b
         box.set_extend(result, _extendRight ? extend.right : extend.none)
     result
 
+f_update_zone_box_index(_box, _left, _right, _top, _bottom, _bgColor, _borderColor, _borderWidth) =>
+    box result = _box
+    if na(result)
+        result := box.new(_left, _top, _right, _bottom, xloc=xloc.bar_index, extend=extend.none, bgcolor=_bgColor, border_color=_borderColor, border_width=_borderWidth)
+    else
+        box.set_left(result, _left)
+        box.set_right(result, _right)
+        box.set_top(result, _top)
+        box.set_bottom(result, _bottom)
+        box.set_bgcolor(result, _bgColor)
+        box.set_border_color(result, _borderColor)
+        box.set_border_width(result, _borderWidth)
+        box.set_extend(result, extend.none)
+    result
+
 f_update_zone_label(_label, _x, _y, _text, _textColor, _size) =>
     label result = _label
     if na(result)
@@ -360,6 +386,28 @@ f_update_zone_label(_label, _x, _y, _text, _textColor, _size) =>
         label.set_color(result, color.new(color.black, 100))
         label.set_style(result, label.style_label_left)
     result
+
+f_update_points_label(_label, _x, _y, _text, _textColor, _size) =>
+    label result = _label
+    if na(result)
+        result := label.new(_x, _y, _text, xloc=xloc.bar_index, yloc=yloc.price, style=label.style_label_left, color=color.new(color.black, 82), textcolor=_textColor, size=_size)
+    else
+        label.set_x(result, _x)
+        label.set_y(result, _y)
+        label.set_text(result, _text)
+        label.set_textcolor(result, _textColor)
+        label.set_size(result, _size)
+        label.set_color(result, color.new(color.black, 82))
+        label.set_style(result, label.style_label_left)
+    result
+
+f_points_label_x(_startIndex, _rightIndex, _extendRight) =>
+    baseIndex = nz(_startIndex, bar_index)
+    rawIndex = baseIndex + clPointsTillBreakOffsetBars
+    _extendRight or na(_rightIndex) ? rawIndex : math.min(rawIndex, _rightIndex)
+
+f_floating_points_label_x() =>
+    math.min(bar_index - clFloatingWindowBarsBack + clPointsTillBreakOffsetBars, bar_index + clFloatingWindowBarsForward)
 
 f_update_anchor_label(_label, _x, _y, _text, _textColor, _style) =>
     label result = _label
@@ -956,6 +1004,23 @@ clUpperH1GapVisible = clShowZonesAllowed and clShowH1SweepGaps and clShowUpperH1
 clLowerH1GapVisible = clShowZonesAllowed and clShowH1SweepGaps and clShowLowerH1SweepGap and h1LowerGapActive
 clH1GapLeftTime = nz(clCurrentHourStartTime, time)
 
+clBreakoutZoneFloatingMode = clBreakoutZoneDisplayMode == "Floating Window"
+clBreakoutZoneFillMode = clBreakoutZoneDisplayMode == "Fill Between Candles"
+
+upperStackLeftBarIndex = ta.valuewhen(clUpperStackDataReady and time <= upperStackLeftTime and time + clBarMs > upperStackLeftTime, bar_index, 0)
+upperStackRightBarIndex = ta.valuewhen(clUpperStackDataReady and time <= upperStackRightTime and time + clBarMs > upperStackRightTime, bar_index, 0)
+lowerStackLeftBarIndex = ta.valuewhen(clLowerStackDataReady and time <= lowerStackLeftTime and time + clBarMs > lowerStackLeftTime, bar_index, 0)
+lowerStackRightBarIndex = ta.valuewhen(clLowerStackDataReady and time <= lowerStackRightTime and time + clBarMs > lowerStackRightTime, bar_index, 0)
+weeklyUpperLeftBarIndex = ta.valuewhen(weeklyUpperStackDataReady and time <= weeklyUpperLeftTime and time + clBarMs > weeklyUpperLeftTime, bar_index, 0)
+weeklyUpperRightBarIndex = ta.valuewhen(weeklyUpperStackDataReady and time <= weeklyUpperRightTime and time + clBarMs > weeklyUpperRightTime, bar_index, 0)
+weeklyLowerLeftBarIndex = ta.valuewhen(weeklyLowerStackDataReady and time <= weeklyLowerLeftTime and time + clBarMs > weeklyLowerLeftTime, bar_index, 0)
+weeklyLowerRightBarIndex = ta.valuewhen(weeklyLowerStackDataReady and time <= weeklyLowerRightTime and time + clBarMs > weeklyLowerRightTime, bar_index, 0)
+monthlyUpperLeftBarIndex = ta.valuewhen(monthlyUpperStackDataReady and time <= monthlyUpperLeftTime and time + clBarMs > monthlyUpperLeftTime, bar_index, 0)
+monthlyUpperRightBarIndex = ta.valuewhen(monthlyUpperStackDataReady and time <= monthlyUpperRightTime and time + clBarMs > monthlyUpperRightTime, bar_index, 0)
+monthlyLowerLeftBarIndex = ta.valuewhen(monthlyLowerStackDataReady and time <= monthlyLowerLeftTime and time + clBarMs > monthlyLowerLeftTime, bar_index, 0)
+monthlyLowerRightBarIndex = ta.valuewhen(monthlyLowerStackDataReady and time <= monthlyLowerRightTime and time + clBarMs > monthlyLowerRightTime, bar_index, 0)
+h1GapLeftBarIndex = ta.valuewhen(time <= clH1GapLeftTime and time + clBarMs > clH1GapLeftTime, bar_index, 0)
+
 var box clUpperStackBox = na
 var box clLowerStackBox = na
 var box clWeeklyUpperStackBox = na
@@ -973,6 +1038,14 @@ var label clMonthlyUpperStackLabel = na
 var label clMonthlyLowerStackLabel = na
 var label clUpperH1GapLabel = na
 var label clLowerH1GapLabel = na
+var label clUpperStackPointsLabel = na
+var label clLowerStackPointsLabel = na
+var label clWeeklyUpperStackPointsLabel = na
+var label clWeeklyLowerStackPointsLabel = na
+var label clMonthlyUpperStackPointsLabel = na
+var label clMonthlyLowerStackPointsLabel = na
+var label clUpperH1GapPointsLabel = na
+var label clLowerH1GapPointsLabel = na
 
 var label clPrevDayHighAnchorLabel = na
 var label clPrevDayLowAnchorLabel = na
@@ -994,14 +1067,91 @@ clH1UpperBg = color.new(clUpperH1GapFillColor, clH1GapFillTransparency)
 clH1LowerBg = color.new(clLowerH1GapFillColor, clH1GapFillTransparency)
 clH1Border = color.new(clH1GapBorderColor, clH1GapBorderTransparency)
 
+var string clLastBreakoutZoneDisplayMode = clBreakoutZoneDisplayMode
+if clBreakoutZoneDisplayMode != clLastBreakoutZoneDisplayMode
+    if not na(clUpperStackBox)
+        box.delete(clUpperStackBox)
+        clUpperStackBox := na
+    if not na(clLowerStackBox)
+        box.delete(clLowerStackBox)
+        clLowerStackBox := na
+    if not na(clWeeklyUpperStackBox)
+        box.delete(clWeeklyUpperStackBox)
+        clWeeklyUpperStackBox := na
+    if not na(clWeeklyLowerStackBox)
+        box.delete(clWeeklyLowerStackBox)
+        clWeeklyLowerStackBox := na
+    if not na(clMonthlyUpperStackBox)
+        box.delete(clMonthlyUpperStackBox)
+        clMonthlyUpperStackBox := na
+    if not na(clMonthlyLowerStackBox)
+        box.delete(clMonthlyLowerStackBox)
+        clMonthlyLowerStackBox := na
+    if not na(clUpperH1GapBox)
+        box.delete(clUpperH1GapBox)
+        clUpperH1GapBox := na
+    if not na(clLowerH1GapBox)
+        box.delete(clLowerH1GapBox)
+        clLowerH1GapBox := na
+    clLastBreakoutZoneDisplayMode := clBreakoutZoneDisplayMode
+
+upperStackFillVisible = upperStackActive and clBreakoutZoneFillMode and time >= upperStackLeftTime and (clExtendStackZonesRight or time <= upperStackRightTime)
+lowerStackFillVisible = lowerStackActive and clBreakoutZoneFillMode and time >= lowerStackLeftTime and (clExtendStackZonesRight or time <= lowerStackRightTime)
+weeklyUpperFillVisible = weeklyUpperStackActive and clBreakoutZoneFillMode and time >= weeklyUpperLeftTime and (clExtendWeeklyDailyStackZonesRight or time <= weeklyUpperRightTime)
+weeklyLowerFillVisible = weeklyLowerStackActive and clBreakoutZoneFillMode and time >= weeklyLowerLeftTime and (clExtendWeeklyDailyStackZonesRight or time <= weeklyLowerRightTime)
+monthlyUpperFillVisible = monthlyUpperStackActive and clBreakoutZoneFillMode and time >= monthlyUpperLeftTime and (clExtendMonthlyDailyStackZonesRight or time <= monthlyUpperRightTime)
+monthlyLowerFillVisible = monthlyLowerStackActive and clBreakoutZoneFillMode and time >= monthlyLowerLeftTime and (clExtendMonthlyDailyStackZonesRight or time <= monthlyLowerRightTime)
+h1UpperFillVisible = clUpperH1GapVisible and clBreakoutZoneFillMode and time >= clH1GapLeftTime
+h1LowerFillVisible = clLowerH1GapVisible and clBreakoutZoneFillMode and time >= clH1GapLeftTime
+
+pUpperStackBreakout = plot(upperStackFillVisible ? clPreviousDayHigh : na, color=color.new(color.black, 100), style=plot.style_stepline, title="Upper Daily / 4H Breakout Boundary")
+pUpperStackFollower = plot(upperStackFillVisible ? clLatestClosed4HHigh : na, color=color.new(color.black, 100), style=plot.style_stepline, title="Upper Daily / 4H Candle-Follow Boundary")
+pLowerStackBreakout = plot(lowerStackFillVisible ? clPreviousDayLow : na, color=color.new(color.black, 100), style=plot.style_stepline, title="Lower Daily / 4H Breakout Boundary")
+pLowerStackFollower = plot(lowerStackFillVisible ? clLatestClosed4HLow : na, color=color.new(color.black, 100), style=plot.style_stepline, title="Lower Daily / 4H Candle-Follow Boundary")
+pWeeklyUpperBreakout = plot(weeklyUpperFillVisible ? clPreviousWeekHigh : na, color=color.new(color.black, 100), style=plot.style_stepline, title="Upper Weekly / Daily Breakout Boundary")
+pWeeklyUpperFollower = plot(weeklyUpperFillVisible ? clLatestClosedDailyHigh : na, color=color.new(color.black, 100), style=plot.style_stepline, title="Upper Weekly / Daily Candle-Follow Boundary")
+pWeeklyLowerBreakout = plot(weeklyLowerFillVisible ? clPreviousWeekLow : na, color=color.new(color.black, 100), style=plot.style_stepline, title="Lower Weekly / Daily Breakout Boundary")
+pWeeklyLowerFollower = plot(weeklyLowerFillVisible ? clLatestClosedDailyLow : na, color=color.new(color.black, 100), style=plot.style_stepline, title="Lower Weekly / Daily Candle-Follow Boundary")
+pMonthlyUpperBreakout = plot(monthlyUpperFillVisible ? clPreviousMonthHigh : na, color=color.new(color.black, 100), style=plot.style_stepline, title="Upper Monthly / Daily Breakout Boundary")
+pMonthlyUpperFollower = plot(monthlyUpperFillVisible ? clLatestClosedDailyHigh : na, color=color.new(color.black, 100), style=plot.style_stepline, title="Upper Monthly / Daily Candle-Follow Boundary")
+pMonthlyLowerBreakout = plot(monthlyLowerFillVisible ? clPreviousMonthLow : na, color=color.new(color.black, 100), style=plot.style_stepline, title="Lower Monthly / Daily Breakout Boundary")
+pMonthlyLowerFollower = plot(monthlyLowerFillVisible ? clLatestClosedDailyLow : na, color=color.new(color.black, 100), style=plot.style_stepline, title="Lower Monthly / Daily Candle-Follow Boundary")
+pH1UpperBreakout = plot(h1UpperFillVisible ? clPreviousHourHigh : na, color=color.new(color.black, 100), style=plot.style_stepline, title="Upper H1 Breakout Boundary")
+pH1UpperFollower = plot(h1UpperFillVisible ? clCurrentHourHigh : na, color=color.new(color.black, 100), style=plot.style_stepline, title="Upper H1 Candle-Follow Boundary")
+pH1LowerBreakout = plot(h1LowerFillVisible ? clPreviousHourLow : na, color=color.new(color.black, 100), style=plot.style_stepline, title="Lower H1 Breakout Boundary")
+pH1LowerFollower = plot(h1LowerFillVisible ? clCurrentHourLow : na, color=color.new(color.black, 100), style=plot.style_stepline, title="Lower H1 Candle-Follow Boundary")
+
+fill(pUpperStackFollower, pUpperStackBreakout, color=clStackUpperBg)
+fill(pLowerStackBreakout, pLowerStackFollower, color=clStackLowerBg)
+fill(pWeeklyUpperFollower, pWeeklyUpperBreakout, color=clWeeklyStackUpperBg)
+fill(pWeeklyLowerBreakout, pWeeklyLowerFollower, color=clWeeklyStackLowerBg)
+fill(pMonthlyUpperFollower, pMonthlyUpperBreakout, color=clMonthlyStackUpperBg)
+fill(pMonthlyLowerBreakout, pMonthlyLowerFollower, color=clMonthlyStackLowerBg)
+fill(pH1UpperFollower, pH1UpperBreakout, color=clH1UpperBg)
+fill(pH1LowerBreakout, pH1LowerFollower, color=clH1LowerBg)
+
 if upperStackActive
-    clUpperStackBox := f_update_zone_box(clUpperStackBox, upperStackLeftTime, upperStackRightTime, upperStackTop, upperStackBottom, clStackUpperBg, clStackBorder, clStackBorderWidth, clExtendStackZonesRight)
+    if clBreakoutZoneFillMode
+        if not na(clUpperStackBox)
+            box.delete(clUpperStackBox)
+            clUpperStackBox := na
+    else if clBreakoutZoneFloatingMode
+        clUpperStackBox := f_update_zone_box_index(clUpperStackBox, bar_index - clFloatingWindowBarsBack, bar_index + clFloatingWindowBarsForward, upperStackTop, upperStackBottom, clStackUpperBg, clStackBorder, clStackBorderWidth)
+    else
+        clUpperStackBox := f_update_zone_box(clUpperStackBox, upperStackLeftTime, upperStackRightTime, upperStackTop, upperStackBottom, clStackUpperBg, clStackBorder, clStackBorderWidth, clExtendStackZonesRight)
     if clShowStackLabels
         clUpperStackLabel := f_update_zone_label(clUpperStackLabel, clZoneRightTime, (upperStackTop + upperStackBottom) / 2.0, "Upper Stack Zone", clStackLabelTextColor, f_zone_label_size(clStackLabelSizeInput))
     else
         if not na(clUpperStackLabel)
             label.delete(clUpperStackLabel)
             clUpperStackLabel := na
+    if clShowPointsTillBreakLabels
+        upperStackPointsX = clBreakoutZoneFloatingMode ? f_floating_points_label_x() : f_points_label_x(upperStackLeftBarIndex, upperStackRightBarIndex, clExtendStackZonesRight)
+        clUpperStackPointsLabel := f_update_points_label(clUpperStackPointsLabel, upperStackPointsX, (clPreviousDayHigh + clLatestClosed4HHigh) / 2.0, f_points_text(clPreviousDayHigh - close), clPointsTillBreakLabelTextColor, f_zone_label_size(clPointsTillBreakLabelSizeInput))
+    else
+        if not na(clUpperStackPointsLabel)
+            label.delete(clUpperStackPointsLabel)
+            clUpperStackPointsLabel := na
     if clShowStackAnchorMarkers
         clPrevDayHighAnchorLabel := f_update_anchor_label(clPrevDayHighAnchorLabel, clPreviousDayHighTime, clPreviousDayHigh, "Prior Day High point", clStackLabelTextColor, label.style_label_down)
         clClosed4HHighAnchorLabel := f_update_anchor_label(clClosed4HHighAnchorLabel, clLatestClosed4HHighTime, clLatestClosed4HHigh, "Latest Closed 4H High point", clStackLabelTextColor, label.style_label_down)
@@ -1019,6 +1169,9 @@ else
     if not na(clUpperStackLabel)
         label.delete(clUpperStackLabel)
         clUpperStackLabel := na
+    if not na(clUpperStackPointsLabel)
+        label.delete(clUpperStackPointsLabel)
+        clUpperStackPointsLabel := na
     if not na(clPrevDayHighAnchorLabel)
         label.delete(clPrevDayHighAnchorLabel)
         clPrevDayHighAnchorLabel := na
@@ -1027,13 +1180,27 @@ else
         clClosed4HHighAnchorLabel := na
 
 if lowerStackActive
-    clLowerStackBox := f_update_zone_box(clLowerStackBox, lowerStackLeftTime, lowerStackRightTime, lowerStackTop, lowerStackBottom, clStackLowerBg, clStackBorder, clStackBorderWidth, clExtendStackZonesRight)
+    if clBreakoutZoneFillMode
+        if not na(clLowerStackBox)
+            box.delete(clLowerStackBox)
+            clLowerStackBox := na
+    else if clBreakoutZoneFloatingMode
+        clLowerStackBox := f_update_zone_box_index(clLowerStackBox, bar_index - clFloatingWindowBarsBack, bar_index + clFloatingWindowBarsForward, lowerStackTop, lowerStackBottom, clStackLowerBg, clStackBorder, clStackBorderWidth)
+    else
+        clLowerStackBox := f_update_zone_box(clLowerStackBox, lowerStackLeftTime, lowerStackRightTime, lowerStackTop, lowerStackBottom, clStackLowerBg, clStackBorder, clStackBorderWidth, clExtendStackZonesRight)
     if clShowStackLabels
         clLowerStackLabel := f_update_zone_label(clLowerStackLabel, clZoneRightTime, (lowerStackTop + lowerStackBottom) / 2.0, "Lower Stack Zone", clStackLabelTextColor, f_zone_label_size(clStackLabelSizeInput))
     else
         if not na(clLowerStackLabel)
             label.delete(clLowerStackLabel)
             clLowerStackLabel := na
+    if clShowPointsTillBreakLabels
+        lowerStackPointsX = clBreakoutZoneFloatingMode ? f_floating_points_label_x() : f_points_label_x(lowerStackLeftBarIndex, lowerStackRightBarIndex, clExtendStackZonesRight)
+        clLowerStackPointsLabel := f_update_points_label(clLowerStackPointsLabel, lowerStackPointsX, (clPreviousDayLow + clLatestClosed4HLow) / 2.0, f_points_text(close - clPreviousDayLow), clPointsTillBreakLabelTextColor, f_zone_label_size(clPointsTillBreakLabelSizeInput))
+    else
+        if not na(clLowerStackPointsLabel)
+            label.delete(clLowerStackPointsLabel)
+            clLowerStackPointsLabel := na
     if clShowStackAnchorMarkers
         clPrevDayLowAnchorLabel := f_update_anchor_label(clPrevDayLowAnchorLabel, clPreviousDayLowTime, clPreviousDayLow, "Prior Day Low point", clStackLabelTextColor, label.style_label_up)
         clClosed4HLowAnchorLabel := f_update_anchor_label(clClosed4HLowAnchorLabel, clLatestClosed4HLowTime, clLatestClosed4HLow, "Latest Closed 4H Low point", clStackLabelTextColor, label.style_label_up)
@@ -1051,6 +1218,9 @@ else
     if not na(clLowerStackLabel)
         label.delete(clLowerStackLabel)
         clLowerStackLabel := na
+    if not na(clLowerStackPointsLabel)
+        label.delete(clLowerStackPointsLabel)
+        clLowerStackPointsLabel := na
     if not na(clPrevDayLowAnchorLabel)
         label.delete(clPrevDayLowAnchorLabel)
         clPrevDayLowAnchorLabel := na
@@ -1059,13 +1229,27 @@ else
         clClosed4HLowAnchorLabel := na
 
 if weeklyUpperStackActive
-    clWeeklyUpperStackBox := f_update_zone_box(clWeeklyUpperStackBox, weeklyUpperLeftTime, weeklyUpperRightTime, weeklyUpperStackTop, weeklyUpperStackBottom, clWeeklyStackUpperBg, clWeeklyStackBorder, clWeeklyDailyStackBorderWidth, clExtendWeeklyDailyStackZonesRight)
+    if clBreakoutZoneFillMode
+        if not na(clWeeklyUpperStackBox)
+            box.delete(clWeeklyUpperStackBox)
+            clWeeklyUpperStackBox := na
+    else if clBreakoutZoneFloatingMode
+        clWeeklyUpperStackBox := f_update_zone_box_index(clWeeklyUpperStackBox, bar_index - clFloatingWindowBarsBack, bar_index + clFloatingWindowBarsForward, weeklyUpperStackTop, weeklyUpperStackBottom, clWeeklyStackUpperBg, clWeeklyStackBorder, clWeeklyDailyStackBorderWidth)
+    else
+        clWeeklyUpperStackBox := f_update_zone_box(clWeeklyUpperStackBox, weeklyUpperLeftTime, weeklyUpperRightTime, weeklyUpperStackTop, weeklyUpperStackBottom, clWeeklyStackUpperBg, clWeeklyStackBorder, clWeeklyDailyStackBorderWidth, clExtendWeeklyDailyStackZonesRight)
     if clShowWeeklyDailyStackLabels
         clWeeklyUpperStackLabel := f_update_zone_label(clWeeklyUpperStackLabel, clZoneRightTime, (weeklyUpperStackTop + weeklyUpperStackBottom) / 2.0, "Upper Weekly / Daily Stack", clWeeklyDailyStackLabelTextColor, f_zone_label_size(clWeeklyDailyStackLabelSizeInput))
     else
         if not na(clWeeklyUpperStackLabel)
             label.delete(clWeeklyUpperStackLabel)
             clWeeklyUpperStackLabel := na
+    if clShowPointsTillBreakLabels
+        weeklyUpperPointsX = clBreakoutZoneFloatingMode ? f_floating_points_label_x() : f_points_label_x(weeklyUpperLeftBarIndex, weeklyUpperRightBarIndex, clExtendWeeklyDailyStackZonesRight)
+        clWeeklyUpperStackPointsLabel := f_update_points_label(clWeeklyUpperStackPointsLabel, weeklyUpperPointsX, (clPreviousWeekHigh + clLatestClosedDailyHigh) / 2.0, f_points_text(clPreviousWeekHigh - close), clPointsTillBreakLabelTextColor, f_zone_label_size(clPointsTillBreakLabelSizeInput))
+    else
+        if not na(clWeeklyUpperStackPointsLabel)
+            label.delete(clWeeklyUpperStackPointsLabel)
+            clWeeklyUpperStackPointsLabel := na
 else
     if not na(clWeeklyUpperStackBox)
         box.delete(clWeeklyUpperStackBox)
@@ -1073,15 +1257,32 @@ else
     if not na(clWeeklyUpperStackLabel)
         label.delete(clWeeklyUpperStackLabel)
         clWeeklyUpperStackLabel := na
+    if not na(clWeeklyUpperStackPointsLabel)
+        label.delete(clWeeklyUpperStackPointsLabel)
+        clWeeklyUpperStackPointsLabel := na
 
 if weeklyLowerStackActive
-    clWeeklyLowerStackBox := f_update_zone_box(clWeeklyLowerStackBox, weeklyLowerLeftTime, weeklyLowerRightTime, weeklyLowerStackTop, weeklyLowerStackBottom, clWeeklyStackLowerBg, clWeeklyStackBorder, clWeeklyDailyStackBorderWidth, clExtendWeeklyDailyStackZonesRight)
+    if clBreakoutZoneFillMode
+        if not na(clWeeklyLowerStackBox)
+            box.delete(clWeeklyLowerStackBox)
+            clWeeklyLowerStackBox := na
+    else if clBreakoutZoneFloatingMode
+        clWeeklyLowerStackBox := f_update_zone_box_index(clWeeklyLowerStackBox, bar_index - clFloatingWindowBarsBack, bar_index + clFloatingWindowBarsForward, weeklyLowerStackTop, weeklyLowerStackBottom, clWeeklyStackLowerBg, clWeeklyStackBorder, clWeeklyDailyStackBorderWidth)
+    else
+        clWeeklyLowerStackBox := f_update_zone_box(clWeeklyLowerStackBox, weeklyLowerLeftTime, weeklyLowerRightTime, weeklyLowerStackTop, weeklyLowerStackBottom, clWeeklyStackLowerBg, clWeeklyStackBorder, clWeeklyDailyStackBorderWidth, clExtendWeeklyDailyStackZonesRight)
     if clShowWeeklyDailyStackLabels
         clWeeklyLowerStackLabel := f_update_zone_label(clWeeklyLowerStackLabel, clZoneRightTime, (weeklyLowerStackTop + weeklyLowerStackBottom) / 2.0, "Lower Weekly / Daily Stack", clWeeklyDailyStackLabelTextColor, f_zone_label_size(clWeeklyDailyStackLabelSizeInput))
     else
         if not na(clWeeklyLowerStackLabel)
             label.delete(clWeeklyLowerStackLabel)
             clWeeklyLowerStackLabel := na
+    if clShowPointsTillBreakLabels
+        weeklyLowerPointsX = clBreakoutZoneFloatingMode ? f_floating_points_label_x() : f_points_label_x(weeklyLowerLeftBarIndex, weeklyLowerRightBarIndex, clExtendWeeklyDailyStackZonesRight)
+        clWeeklyLowerStackPointsLabel := f_update_points_label(clWeeklyLowerStackPointsLabel, weeklyLowerPointsX, (clPreviousWeekLow + clLatestClosedDailyLow) / 2.0, f_points_text(close - clPreviousWeekLow), clPointsTillBreakLabelTextColor, f_zone_label_size(clPointsTillBreakLabelSizeInput))
+    else
+        if not na(clWeeklyLowerStackPointsLabel)
+            label.delete(clWeeklyLowerStackPointsLabel)
+            clWeeklyLowerStackPointsLabel := na
 else
     if not na(clWeeklyLowerStackBox)
         box.delete(clWeeklyLowerStackBox)
@@ -1089,15 +1290,32 @@ else
     if not na(clWeeklyLowerStackLabel)
         label.delete(clWeeklyLowerStackLabel)
         clWeeklyLowerStackLabel := na
+    if not na(clWeeklyLowerStackPointsLabel)
+        label.delete(clWeeklyLowerStackPointsLabel)
+        clWeeklyLowerStackPointsLabel := na
 
 if monthlyUpperStackActive
-    clMonthlyUpperStackBox := f_update_zone_box(clMonthlyUpperStackBox, monthlyUpperLeftTime, monthlyUpperRightTime, monthlyUpperStackTop, monthlyUpperStackBottom, clMonthlyStackUpperBg, clMonthlyStackBorder, clMonthlyDailyStackBorderWidth, clExtendMonthlyDailyStackZonesRight)
+    if clBreakoutZoneFillMode
+        if not na(clMonthlyUpperStackBox)
+            box.delete(clMonthlyUpperStackBox)
+            clMonthlyUpperStackBox := na
+    else if clBreakoutZoneFloatingMode
+        clMonthlyUpperStackBox := f_update_zone_box_index(clMonthlyUpperStackBox, bar_index - clFloatingWindowBarsBack, bar_index + clFloatingWindowBarsForward, monthlyUpperStackTop, monthlyUpperStackBottom, clMonthlyStackUpperBg, clMonthlyStackBorder, clMonthlyDailyStackBorderWidth)
+    else
+        clMonthlyUpperStackBox := f_update_zone_box(clMonthlyUpperStackBox, monthlyUpperLeftTime, monthlyUpperRightTime, monthlyUpperStackTop, monthlyUpperStackBottom, clMonthlyStackUpperBg, clMonthlyStackBorder, clMonthlyDailyStackBorderWidth, clExtendMonthlyDailyStackZonesRight)
     if clShowMonthlyDailyStackLabels
         clMonthlyUpperStackLabel := f_update_zone_label(clMonthlyUpperStackLabel, clZoneRightTime, (monthlyUpperStackTop + monthlyUpperStackBottom) / 2.0, "Upper Monthly / Daily Stack", clMonthlyDailyStackLabelTextColor, f_zone_label_size(clMonthlyDailyStackLabelSizeInput))
     else
         if not na(clMonthlyUpperStackLabel)
             label.delete(clMonthlyUpperStackLabel)
             clMonthlyUpperStackLabel := na
+    if clShowPointsTillBreakLabels
+        monthlyUpperPointsX = clBreakoutZoneFloatingMode ? f_floating_points_label_x() : f_points_label_x(monthlyUpperLeftBarIndex, monthlyUpperRightBarIndex, clExtendMonthlyDailyStackZonesRight)
+        clMonthlyUpperStackPointsLabel := f_update_points_label(clMonthlyUpperStackPointsLabel, monthlyUpperPointsX, (clPreviousMonthHigh + clLatestClosedDailyHigh) / 2.0, f_points_text(clPreviousMonthHigh - close), clPointsTillBreakLabelTextColor, f_zone_label_size(clPointsTillBreakLabelSizeInput))
+    else
+        if not na(clMonthlyUpperStackPointsLabel)
+            label.delete(clMonthlyUpperStackPointsLabel)
+            clMonthlyUpperStackPointsLabel := na
 else
     if not na(clMonthlyUpperStackBox)
         box.delete(clMonthlyUpperStackBox)
@@ -1105,15 +1323,32 @@ else
     if not na(clMonthlyUpperStackLabel)
         label.delete(clMonthlyUpperStackLabel)
         clMonthlyUpperStackLabel := na
+    if not na(clMonthlyUpperStackPointsLabel)
+        label.delete(clMonthlyUpperStackPointsLabel)
+        clMonthlyUpperStackPointsLabel := na
 
 if monthlyLowerStackActive
-    clMonthlyLowerStackBox := f_update_zone_box(clMonthlyLowerStackBox, monthlyLowerLeftTime, monthlyLowerRightTime, monthlyLowerStackTop, monthlyLowerStackBottom, clMonthlyStackLowerBg, clMonthlyStackBorder, clMonthlyDailyStackBorderWidth, clExtendMonthlyDailyStackZonesRight)
+    if clBreakoutZoneFillMode
+        if not na(clMonthlyLowerStackBox)
+            box.delete(clMonthlyLowerStackBox)
+            clMonthlyLowerStackBox := na
+    else if clBreakoutZoneFloatingMode
+        clMonthlyLowerStackBox := f_update_zone_box_index(clMonthlyLowerStackBox, bar_index - clFloatingWindowBarsBack, bar_index + clFloatingWindowBarsForward, monthlyLowerStackTop, monthlyLowerStackBottom, clMonthlyStackLowerBg, clMonthlyStackBorder, clMonthlyDailyStackBorderWidth)
+    else
+        clMonthlyLowerStackBox := f_update_zone_box(clMonthlyLowerStackBox, monthlyLowerLeftTime, monthlyLowerRightTime, monthlyLowerStackTop, monthlyLowerStackBottom, clMonthlyStackLowerBg, clMonthlyStackBorder, clMonthlyDailyStackBorderWidth, clExtendMonthlyDailyStackZonesRight)
     if clShowMonthlyDailyStackLabels
         clMonthlyLowerStackLabel := f_update_zone_label(clMonthlyLowerStackLabel, clZoneRightTime, (monthlyLowerStackTop + monthlyLowerStackBottom) / 2.0, "Lower Monthly / Daily Stack", clMonthlyDailyStackLabelTextColor, f_zone_label_size(clMonthlyDailyStackLabelSizeInput))
     else
         if not na(clMonthlyLowerStackLabel)
             label.delete(clMonthlyLowerStackLabel)
             clMonthlyLowerStackLabel := na
+    if clShowPointsTillBreakLabels
+        monthlyLowerPointsX = clBreakoutZoneFloatingMode ? f_floating_points_label_x() : f_points_label_x(monthlyLowerLeftBarIndex, monthlyLowerRightBarIndex, clExtendMonthlyDailyStackZonesRight)
+        clMonthlyLowerStackPointsLabel := f_update_points_label(clMonthlyLowerStackPointsLabel, monthlyLowerPointsX, (clPreviousMonthLow + clLatestClosedDailyLow) / 2.0, f_points_text(close - clPreviousMonthLow), clPointsTillBreakLabelTextColor, f_zone_label_size(clPointsTillBreakLabelSizeInput))
+    else
+        if not na(clMonthlyLowerStackPointsLabel)
+            label.delete(clMonthlyLowerStackPointsLabel)
+            clMonthlyLowerStackPointsLabel := na
 else
     if not na(clMonthlyLowerStackBox)
         box.delete(clMonthlyLowerStackBox)
@@ -1121,15 +1356,32 @@ else
     if not na(clMonthlyLowerStackLabel)
         label.delete(clMonthlyLowerStackLabel)
         clMonthlyLowerStackLabel := na
+    if not na(clMonthlyLowerStackPointsLabel)
+        label.delete(clMonthlyLowerStackPointsLabel)
+        clMonthlyLowerStackPointsLabel := na
 
 if clUpperH1GapVisible
-    clUpperH1GapBox := f_update_zone_box(clUpperH1GapBox, clH1GapLeftTime, clZoneRightTime, h1UpperGapTop, h1UpperGapBottom, clH1UpperBg, clH1Border, clH1GapBorderWidth, clExtendH1GapsRight)
+    if clBreakoutZoneFillMode
+        if not na(clUpperH1GapBox)
+            box.delete(clUpperH1GapBox)
+            clUpperH1GapBox := na
+    else if clBreakoutZoneFloatingMode
+        clUpperH1GapBox := f_update_zone_box_index(clUpperH1GapBox, bar_index - clFloatingWindowBarsBack, bar_index + clFloatingWindowBarsForward, h1UpperGapTop, h1UpperGapBottom, clH1UpperBg, clH1Border, clH1GapBorderWidth)
+    else
+        clUpperH1GapBox := f_update_zone_box(clUpperH1GapBox, clH1GapLeftTime, clZoneRightTime, h1UpperGapTop, h1UpperGapBottom, clH1UpperBg, clH1Border, clH1GapBorderWidth, clExtendH1GapsRight)
     if clShowH1GapLabels
         clUpperH1GapLabel := f_update_zone_label(clUpperH1GapLabel, clZoneRightTime, (h1UpperGapTop + h1UpperGapBottom) / 2.0, "Upper H1 Sweep Gap", clH1GapLabelTextColor, f_zone_label_size(clH1GapLabelSizeInput))
     else
         if not na(clUpperH1GapLabel)
             label.delete(clUpperH1GapLabel)
             clUpperH1GapLabel := na
+    if clShowPointsTillBreakLabels
+        h1UpperPointsX = clBreakoutZoneFloatingMode ? f_floating_points_label_x() : f_points_label_x(h1GapLeftBarIndex, bar_index, clExtendH1GapsRight)
+        clUpperH1GapPointsLabel := f_update_points_label(clUpperH1GapPointsLabel, h1UpperPointsX, (clPreviousHourHigh + clCurrentHourHigh) / 2.0, f_points_text(clPreviousHourHigh - close), clPointsTillBreakLabelTextColor, f_zone_label_size(clPointsTillBreakLabelSizeInput))
+    else
+        if not na(clUpperH1GapPointsLabel)
+            label.delete(clUpperH1GapPointsLabel)
+            clUpperH1GapPointsLabel := na
 else
     if not na(clUpperH1GapBox)
         box.delete(clUpperH1GapBox)
@@ -1137,15 +1389,32 @@ else
     if not na(clUpperH1GapLabel)
         label.delete(clUpperH1GapLabel)
         clUpperH1GapLabel := na
+    if not na(clUpperH1GapPointsLabel)
+        label.delete(clUpperH1GapPointsLabel)
+        clUpperH1GapPointsLabel := na
 
 if clLowerH1GapVisible
-    clLowerH1GapBox := f_update_zone_box(clLowerH1GapBox, clH1GapLeftTime, clZoneRightTime, h1LowerGapTop, h1LowerGapBottom, clH1LowerBg, clH1Border, clH1GapBorderWidth, clExtendH1GapsRight)
+    if clBreakoutZoneFillMode
+        if not na(clLowerH1GapBox)
+            box.delete(clLowerH1GapBox)
+            clLowerH1GapBox := na
+    else if clBreakoutZoneFloatingMode
+        clLowerH1GapBox := f_update_zone_box_index(clLowerH1GapBox, bar_index - clFloatingWindowBarsBack, bar_index + clFloatingWindowBarsForward, h1LowerGapTop, h1LowerGapBottom, clH1LowerBg, clH1Border, clH1GapBorderWidth)
+    else
+        clLowerH1GapBox := f_update_zone_box(clLowerH1GapBox, clH1GapLeftTime, clZoneRightTime, h1LowerGapTop, h1LowerGapBottom, clH1LowerBg, clH1Border, clH1GapBorderWidth, clExtendH1GapsRight)
     if clShowH1GapLabels
         clLowerH1GapLabel := f_update_zone_label(clLowerH1GapLabel, clZoneRightTime, (h1LowerGapTop + h1LowerGapBottom) / 2.0, "Lower H1 Sweep Gap", clH1GapLabelTextColor, f_zone_label_size(clH1GapLabelSizeInput))
     else
         if not na(clLowerH1GapLabel)
             label.delete(clLowerH1GapLabel)
             clLowerH1GapLabel := na
+    if clShowPointsTillBreakLabels
+        h1LowerPointsX = clBreakoutZoneFloatingMode ? f_floating_points_label_x() : f_points_label_x(h1GapLeftBarIndex, bar_index, clExtendH1GapsRight)
+        clLowerH1GapPointsLabel := f_update_points_label(clLowerH1GapPointsLabel, h1LowerPointsX, (clPreviousHourLow + clCurrentHourLow) / 2.0, f_points_text(close - clPreviousHourLow), clPointsTillBreakLabelTextColor, f_zone_label_size(clPointsTillBreakLabelSizeInput))
+    else
+        if not na(clLowerH1GapPointsLabel)
+            label.delete(clLowerH1GapPointsLabel)
+            clLowerH1GapPointsLabel := na
 else
     if not na(clLowerH1GapBox)
         box.delete(clLowerH1GapBox)
@@ -1153,6 +1422,9 @@ else
     if not na(clLowerH1GapLabel)
         label.delete(clLowerH1GapLabel)
         clLowerH1GapLabel := na
+    if not na(clLowerH1GapPointsLabel)
+        label.delete(clLowerH1GapPointsLabel)
+        clLowerH1GapPointsLabel := na
 
 clZoneAtr = ta.atr(clZoneAtrLength)
 clNearDistance = clNearMode == "Fixed Points" ? clNearDistancePoints : clNearMode == "Ticks" ? clNearDistanceTicks * syminfo.mintick : clNearDistanceAtrMultiplier * clZoneAtr
