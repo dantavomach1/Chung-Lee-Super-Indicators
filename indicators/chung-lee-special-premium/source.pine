@@ -48,47 +48,58 @@ f_overlay_window_ok(selection) =>
 //=================================================================================================================
 // SECTION 1 – INPUTS & MENU SETTINGS
 //=================================================================================================================
-groupOverlays    = "HTF Candle Overlays"
-groupLabels      = "Overlay Labels"
-groupMA          = "Moving Average Suite"
-groupFA          = "MA Fill"
-groupBB          = "Bollinger Bands"
-groupSessions    = "Session Highlighting"
-groupFutures     = "Futures Value Panel"
-groupBreakoutZones = "Breakout Zones"
+groupOverlays      = "01  HTF Candle Overlays"
+groupOverlayLabels = "02  Overlay Labels"
+groupBreakoutZones = "03  Breakout Zones"
+groupMA            = "04  Moving Average Suite"
+groupMAFill        = "05  MA Fill"
+groupBB            = "06  Bollinger Bands"
+groupSessions      = "07  Session Highlighting"
+groupFutures       = "08  Futures Value Panel"
 
-showHourlyOverlay   = input.bool(true, "Show 1H Overlay", group=groupOverlays, inline="ov1", tooltip="Higher-timeframe candle overlays.\n\nUse the master toggles to enable 1H / 4H / Daily overlays.\nUse the timeframe filters to decide which chart timeframes each overlay can appear on.\nOverlay Lookback limits how far back closed and live overlay objects are allowed to draw.")
-showFourHourOverlay = input.bool(true, "Show 4H Overlay", group=groupOverlays, inline="ov2")
-showDailyOverlay    = input.bool(true, "Show Daily Overlay", group=groupOverlays, inline="ov3")
+menuDisplay = display.all - display.status_line
 
-hourlyFilterEnabled   = input.bool(true, "Enable timeframe filter", group=groupOverlays, inline="flt1")
-hourlyWindow          = input.string("1-15 min", "Show this overlay on", options=["1-5 min", "6-15 min", "1-15 min", "16 min+", "All chart timeframes"], group=groupOverlays, inline="flt1")
-fourHourFilterEnabled = input.bool(true, "Enable timeframe filter", group=groupOverlays, inline="flt2")
-fourHourWindow        = input.string("1-15 min", "Show this overlay on", options=["1-5 min", "6-15 min", "1-15 min", "16 min+", "All chart timeframes"], group=groupOverlays, inline="flt2")
-dailyFilterEnabled    = input.bool(true, "Enable timeframe filter", group=groupOverlays, inline="flt3")
-dailyWindow           = input.string("1-15 min", "Show this overlay on", options=["1-5 min", "6-15 min", "1-15 min", "16 min+", "All chart timeframes"], group=groupOverlays, inline="flt3")
+// MENU DESIGN RULES:
+// - Major toggles and mode dropdowns get their own clear rows.
+// - Related small controls may share an inline row, usually 2–3 controls max.
+// - Use short labels in the menu and put explanations in tooltips.
+// - Do not fake alignment with long spacing strings.
+// - Use active=... so mode-specific settings dim when irrelevant.
+// - Use display.all - display.status_line for technical settings that should not clutter the status line.
+overlayTooltip = "Higher-timeframe candle overlays.\n\nUse the 1H, 4H, and Daily toggles to choose which overlay candles draw. Filters limit overlays by chart timeframe, and Lookback Days caps historical objects."
+showHourlyOverlay   = input.bool(true, "Show 1H", group=groupOverlays, inline="ov-show", tooltip=overlayTooltip)
+showFourHourOverlay = input.bool(true, "Show 4H", group=groupOverlays, inline="ov-show")
+showDailyOverlay    = input.bool(true, "Show Daily", group=groupOverlays, inline="ov-show")
 
-overlayLookbackDays = input.int(250, "Overlay Lookback (Days)", group=groupOverlays, inline="lb1")
+hourlyFilterEnabled   = input.bool(true, "1H Filter", group=groupOverlays, inline="ov-1h")
+hourlyWindow          = input.string("1-15 min", "Window", options=["1-5 min", "6-15 min", "1-15 min", "16 min+", "All chart timeframes"], group=groupOverlays, inline="ov-1h", display=menuDisplay)
+fourHourFilterEnabled = input.bool(true, "4H Filter", group=groupOverlays, inline="ov-4h")
+fourHourWindow        = input.string("1-15 min", "Window", options=["1-5 min", "6-15 min", "1-15 min", "16 min+", "All chart timeframes"], group=groupOverlays, inline="ov-4h", display=menuDisplay)
+dailyFilterEnabled    = input.bool(true, "Daily Filter", group=groupOverlays, inline="ov-d")
+dailyWindow           = input.string("1-15 min", "Window", options=["1-5 min", "6-15 min", "1-15 min", "16 min+", "All chart timeframes"], group=groupOverlays, inline="ov-d", display=menuDisplay)
+
+overlayLookbackDays = input.int(250, "Lookback Days", group=groupOverlays, display=menuDisplay)
 codedLookbackTime   = 1000 * 60 * 60 * 24 * (overlayLookbackDays + 1)
 AllowedTime         = time >= timenow - codedLookbackTime
 
-BullishCandleColor       = input.color(#b49c0025, "Bull Candle Fill", group=groupOverlays, inline="clr1")
-BearishCandleColor       = input.color(#acacac25, "Bear Candle Fill", group=groupOverlays, inline="clr1")
-BullishCandleBorderColor = input.color(color.new(#000000, 0), "Bull Candle Border", group=groupOverlays, inline="clr2", tooltip="Increase transparency to make borders more visible on bright charts.")
-BearishCandleBorderColor = input.color(color.new(#000000, 0), "Bear Candle Border", group=groupOverlays, inline="clr2")
-CandleStickBorderWidth   = input.int(1, "Candle Border Width", options=[1,2,3,4,5,6,7,8,9,10], group=groupOverlays, inline="clr3")
+BullishCandleColor       = input.color(#b49c0025, "Bull Fill", group=groupOverlays, inline="ov-fill")
+BearishCandleColor       = input.color(#acacac25, "Bear Fill", group=groupOverlays, inline="ov-fill")
+BullishCandleBorderColor = input.color(color.new(#000000, 0), "Bull Border", group=groupOverlays, inline="ov-border", tooltip="Increase transparency if borders are too strong on bright charts.")
+BearishCandleBorderColor = input.color(color.new(#000000, 0), "Bear Border", group=groupOverlays, inline="ov-border")
+CandleStickBorderWidth   = input.int(1, "Width", options=[1,2,3,4,5,6,7,8,9,10], group=groupOverlays, inline="ov-border", display=menuDisplay)
 
-WickColor = input.color(color.new(color.white, 10), "Wick Color", group=groupOverlays, inline="wick1")
-WickWidth = input.int(2, "Wick Width", options=[1,2,3,4,5,6,7,8,9,10], group=groupOverlays, inline="wick1")
+WickColor = input.color(color.new(color.white, 10), "Wick", group=groupOverlays, inline="ov-wick")
+WickWidth = input.int(2, "Wick Width", options=[1,2,3,4,5,6,7,8,9,10], group=groupOverlays, inline="ov-wick", display=menuDisplay)
 
-LabelBaseOffsetTicks = input.int(40, "Label Base Offset (ticks)", group=groupLabels, inline="lbl1", tooltip="Overlay label controls.\n\nTime Label shows the candle's time span.\nHigh-Low Label shows the total candle range.\nOpen-Close Label shows the body size.\nUse the offset controls to move labels away from the candle high.")
-LabelSpacingTicks    = input.int(20, "Label Spacing (ticks)", group=groupLabels, inline="lbl1")
-LabelBg              = input.color(color.new(color.black, 85), "Label Background", group=groupLabels, inline="lbl2")
-LabelText            = input.color(color.white, "Label Text", group=groupLabels, inline="lbl2")
+overlayLabelTooltip = "Overlay label controls.\n\nTime shows the candle span, Range shows high-to-low distance, and Body shows open-to-close distance."
+ShowLabel_Time = input.bool(true, "Show Time", group=groupOverlayLabels, inline="ol-show", tooltip=overlayLabelTooltip)
+ShowLabel_WW   = input.bool(true, "Show Range", group=groupOverlayLabels, inline="ol-show")
+ShowLabel_OC   = input.bool(true, "Show Body", group=groupOverlayLabels, inline="ol-show")
 
-ShowLabel_Time = input.bool(true, "Show Time Label", group=groupLabels, inline="t0")
-ShowLabel_WW   = input.bool(true, "Show High-Low Label", group=groupLabels, inline="t1")
-ShowLabel_OC   = input.bool(true, "Show Open-Close Label", group=groupLabels, inline="t1")
+LabelBaseOffsetTicks = input.int(40, "Base Offset", group=groupOverlayLabels, inline="ol-offset", tooltip="Moves overlay labels away from the candle high using ticks.", display=menuDisplay)
+LabelSpacingTicks    = input.int(20, "Spacing", group=groupOverlayLabels, inline="ol-offset", display=menuDisplay)
+LabelBg              = input.color(color.new(color.black, 85), "Background", group=groupOverlayLabels, inline="ol-colors")
+LabelText            = input.color(color.white, "Text", group=groupOverlayLabels, inline="ol-colors")
 
 allowHourlyOverlay   = showHourlyOverlay and AllowedTime and (not hourlyFilterEnabled or f_overlay_window_ok(hourlyWindow))
 allowFourHourOverlay = showFourHourOverlay and AllowedTime and (not fourHourFilterEnabled or f_overlay_window_ok(fourHourWindow))
@@ -106,53 +117,42 @@ tzOverlay = "America/Los_Angeles"
 // - Put major dropdowns on their own line.
 // - Only inline very small related inputs.
 // - Use tooltips for long explanations instead of long menu labels.
-clShowBreakoutZones = input.bool(true, "Show Breakout Zones", group=groupBreakoutZones)
+breakoutMasterTooltip = "Master switch for all breakout-zone families.\n\nWhen disabled, Hourly, Four Hour, Daily, Weekly, and Monthly breakout zones do not render."
+breakoutDisplayTooltip = "Controls how breakout zones are drawn.\n\nAnchored: boxes from actual reference anchors.\nFitted: candle-hugging fill plus optional right extension.\nFloating: detached forward/back window around current bars."
+fittedBreakoutTooltip = "Fitted mode shades the candle-hugging body first, then optionally extends a clean rectangle to the right for the selected number of bars."
+floatingBreakoutTooltip = "Floating mode draws a compact window around the latest bars instead of anchoring to historical reference times."
+clShowBreakoutZones = input.bool(true, "Show Breakout Zones", group=groupBreakoutZones, tooltip=breakoutMasterTooltip)
 
-clBreakoutZoneDisplayMode = input.string("Anchored breakout zones", "Breakout Zone Display Mode", options=["Anchored breakout zones", "Fitted breakout zones", "Floating breakout zones"], group=groupBreakoutZones)
-clExtendBreakoutZonesRight = input.bool(true, "Extend anchored zones right", group=groupBreakoutZones, tooltip="Only affects anchored breakout zones.")
+clBreakoutZoneDisplayMode = input.string("Anchored breakout zones", "Display Mode", options=["Anchored breakout zones", "Fitted breakout zones", "Floating breakout zones"], group=groupBreakoutZones, tooltip=breakoutDisplayTooltip)
+clExtendBreakoutZonesRight = input.bool(true, "Anchored Extend", group=groupBreakoutZones, tooltip="Only affects anchored breakout zones.")
 
-clShowHourlyBreakoutZone = input.bool(true, "Show Hourly Breakout Zone", group=groupBreakoutZones)
-clShowFourHourBreakoutZone = input.bool(true, "Show Four Hour Breakout Zone", group=groupBreakoutZones)
-clShowDailyBreakoutZone = input.bool(true, "Show Daily Breakout Zone", group=groupBreakoutZones)
-clShowWeeklyBreakoutZone = input.bool(false, "Show Weekly Breakout Zone", group=groupBreakoutZones)
-clShowMonthlyBreakoutZone = input.bool(false, "Show Monthly Breakout Zone", group=groupBreakoutZones)
+clShowHourlyBreakoutZone = input.bool(true, "Hourly", group=groupBreakoutZones, tooltip="Shows both upper and lower Hourly Breakout Zones.")
+clShowFourHourBreakoutZone = input.bool(true, "Four Hour", group=groupBreakoutZones, tooltip="Shows both upper and lower Four Hour Breakout Zones.")
+clShowDailyBreakoutZone = input.bool(true, "Daily", group=groupBreakoutZones, tooltip="Shows both upper and lower Daily Breakout Zones.")
+clShowWeeklyBreakoutZone = input.bool(false, "Weekly", group=groupBreakoutZones, tooltip="Shows both upper and lower Weekly Breakout Zones.")
+clShowMonthlyBreakoutZone = input.bool(false, "Monthly", group=groupBreakoutZones, tooltip="Shows both upper and lower Monthly Breakout Zones.")
 
-clFittedBreakoutExtendRight = input.bool(true, "Fitted breakout right extension", group=groupBreakoutZones)
-clFittedBreakoutExtensionBars = input.int(75, "Fitted breakout extension bars", minval=0, maxval=500, group=groupBreakoutZones)
+clFittedBreakoutExtendRight = input.bool(true, "Right Extension", group=groupBreakoutZones, tooltip=fittedBreakoutTooltip)
+clFittedBreakoutExtensionBars = input.int(75, "Extension Bars", minval=0, maxval=500, group=groupBreakoutZones, display=menuDisplay)
 
-clFloatingWindowBarsBack = input.int(5, "Floating breakout bars back", minval=0, group=groupBreakoutZones)
-clFloatingWindowBarsForward = input.int(75, "Floating breakout bars forward", minval=1, group=groupBreakoutZones)
+clFloatingWindowBarsBack = input.int(5, "Bars Back", minval=0, group=groupBreakoutZones, inline="bz-float", tooltip=floatingBreakoutTooltip, display=menuDisplay)
+clFloatingWindowBarsForward = input.int(75, "Bars Forward", minval=1, group=groupBreakoutZones, inline="bz-float", display=menuDisplay)
 
-clUpperBreakoutFillColor = input.color(color.new(color.green, 0), "Upper Breakout Color", group=groupBreakoutZones)
-clLowerBreakoutFillColor = input.color(color.new(color.red, 0), "Lower Breakout Color", group=groupBreakoutZones)
-clBreakoutFillTransparency = input.int(88, "Breakout Fill Transparency", minval=0, maxval=100, group=groupBreakoutZones)
-clBreakoutBorderColor = input.color(color.new(color.white, 0), "Breakout Border Color", group=groupBreakoutZones)
-clBreakoutBorderTransparency = input.int(85, "Breakout Border Transparency", minval=0, maxval=100, group=groupBreakoutZones)
-clBreakoutBorderWidth = input.int(1, "Breakout Border Width", minval=0, maxval=5, group=groupBreakoutZones)
+clUpperBreakoutFillColor = input.color(color.new(color.green, 0), "Upper", group=groupBreakoutZones, inline="bz-fill")
+clLowerBreakoutFillColor = input.color(color.new(color.red, 0), "Lower", group=groupBreakoutZones, inline="bz-fill")
+clBreakoutFillTransparency = input.int(88, "Fill Transp.", minval=0, maxval=100, group=groupBreakoutZones, display=menuDisplay)
+clBreakoutBorderColor = input.color(color.new(color.white, 0), "Border", group=groupBreakoutZones, inline="bz-border")
+clBreakoutBorderTransparency = input.int(85, "Border Transp.", minval=0, maxval=100, group=groupBreakoutZones, inline="bz-border", display=menuDisplay)
+clBreakoutBorderWidth = input.int(1, "Border Width", minval=0, maxval=5, group=groupBreakoutZones, inline="bz-border", display=menuDisplay)
 
-clShowBreakoutLabels = input.bool(false, "Show breakout labels", group=groupBreakoutZones)
-clBreakoutLabelTextColor = input.color(color.new(color.white, 0), "Breakout label text color", group=groupBreakoutZones)
-clBreakoutLabelSizeInput = input.string("Small", "Breakout label size", options=["Tiny", "Small", "Normal", "Large"], group=groupBreakoutZones)
-clShowBreakoutAnchorMarkers = input.bool(false, "Show breakout anchor markers", group=groupBreakoutZones, tooltip="Optional quiet markers for referenced high/low anchor bars.")
-clShowPointsTillBreakLabels = input.bool(true, "Show points-to-break labels", group=groupBreakoutZones)
-clPointsTillBreakOffsetBars = input.int(10, "Points label offset bars", minval=0, group=groupBreakoutZones)
-clPointsTillBreakLabelTextColor = input.color(color.new(color.white, 0), "Points label text color", group=groupBreakoutZones)
-clPointsTillBreakLabelSizeInput = input.string("Small", "Points label size", options=["Tiny", "Small", "Normal", "Large"], group=groupBreakoutZones)
-
-//=================================================================================================================
-// SECTION 1.5 – FUTURES VALUE PANEL INPUTS
-//=================================================================================================================
-showFuturesValuePanel  = input.bool(true, "Show Futures Value Panel", group=groupFutures, inline="fp1", tooltip="Futures value reference panel.\n\nShows $ per tick and/or $ per point for curated futures contracts plus the current chart symbol.\nCompact mode focuses on the most-used contracts.\nCustom Symbols lets you reduce the list to supported roots you care about, comma-separated.")
-futuresPanelLocation   = input.string("Top Right", "Panel Location", options=["Top Left", "Top Right", "Bottom Left", "Bottom Right"], group=groupFutures, inline="fp1")
-futuresDisplayMode     = input.string("Both", "Display Mode", options=["$ / Tick", "$ / Point", "Both"], group=groupFutures, inline="fp2")
-futuresTextSizeInput   = input.string("Small", "Text Size", options=["Tiny", "Small", "Normal"], group=groupFutures, inline="fp2")
-highlightCurrentSymbol = input.bool(true, "Show current symbol highlight", group=groupFutures, inline="fp3")
-compactFuturesMode     = input.bool(false, "Compact mode", group=groupFutures, inline="fp3")
-futuresCustomList      = input.string("", "Custom Symbols", group=groupFutures, tooltip="Optional comma-separated list of supported roots to show after the current symbol row.\nExample: ES,NQ,CL,GC,BTC,MBT,SI,HG\n\nIf left blank, the panel uses the curated default list.\nTradingView Pine cannot read your platform watchlist directly.")
-futuresPanelBgColor    = input.color(color.new(color.black, 80), "Background Color", group=groupFutures, inline="fp4")
-futuresHeaderBgColor   = input.color(color.new(#a58700, 10), "Header Background", group=groupFutures, inline="fp4")
-futuresBorderColor     = input.color(color.new(color.white, 60), "Border Color", group=groupFutures, inline="fp5")
-futuresPanelTextColor  = input.color(color.white, "Text Color", group=groupFutures, inline="fp5")
+clShowBreakoutLabels = input.bool(false, "Show Labels", group=groupBreakoutZones, inline="bz-label")
+clBreakoutLabelSizeInput = input.string("Small", "Label Size", options=["Tiny", "Small", "Normal", "Large"], group=groupBreakoutZones, inline="bz-label", display=menuDisplay)
+clShowPointsTillBreakLabels = input.bool(true, "Show Points", group=groupBreakoutZones, inline="bz-points")
+clPointsTillBreakOffsetBars = input.int(10, "Offset Bars", minval=0, group=groupBreakoutZones, inline="bz-points", display=menuDisplay)
+clBreakoutLabelTextColor = input.color(color.new(color.white, 0), "Label Text", group=groupBreakoutZones, inline="bz-text")
+clPointsTillBreakLabelTextColor = input.color(color.new(color.white, 0), "Points Text", group=groupBreakoutZones, inline="bz-text")
+clPointsTillBreakLabelSizeInput = input.string("Small", "Points Size", options=["Tiny", "Small", "Normal", "Large"], group=groupBreakoutZones, display=menuDisplay)
+clShowBreakoutAnchorMarkers = input.bool(false, "Anchor Markers", group=groupBreakoutZones, tooltip="Optional quiet markers for referenced high/low anchor bars.")
 
 //=================================================================================================================
 // SECTION 2 – SHARED HELPER FUNCTIONS
@@ -1601,54 +1601,55 @@ else
 //=================================================================================================================================================================================
 isLowTF = timeframe.isintraday and timeframe.multiplier <= 30
 
-enableMA = input.bool(false, "Enable Moving Averages", group=groupMA, tooltip="Moving average stack.\n\nApplies one MA type and one source across up to ten lines.\nEach line has its own length and price offset.\nThe old Line Style control was removed because Pine plot lines cannot render true dashed or dotted styles.")
-maType    = input.string("SMA", "MA Type", options=["SMA","EMA","SMMA (RMA)","WMA","VWMA"], group=groupMA)
-maSource  = input.source(close, "Source", group=groupMA)
-maColor   = input.color(#a58700, "Line Color", group=groupMA)
-lineWidth = input.int(1, "Line Width", minval=1, maxval=5, group=groupMA)
+maTooltip = "Moving average stack.\n\nOne shared type, source, color, and width applies across up to ten lines. Each line keeps its own visibility, length, and price offset."
+enableMA = input.bool(false, "Enable", group=groupMA, inline="ma-core", tooltip=maTooltip)
+maType    = input.string("SMA", "Type", options=["SMA","EMA","SMMA (RMA)","WMA","VWMA"], group=groupMA, inline="ma-core")
+maSource  = input.source(close, "Source", group=groupMA, display=menuDisplay)
+maColor   = input.color(#a58700, "Color", group=groupMA, inline="ma-style")
+lineWidth = input.int(1, "Width", minval=1, maxval=5, group=groupMA, inline="ma-style", display=menuDisplay)
 
-fillEnable  = input.bool(false, "Fill Between MA 1 and MA 2", group=groupFA, tooltip="Visual fill controls for the first two moving averages.")
-fillColor   = input.color(color.new(#a58700, 80), "Fill Color", group=groupFA)
+showLine1  = input.bool(true, "MA 1", group=groupMA, inline="ma1a", tooltip="Each row controls one MA line: show, length, and price offset.")
+length1    = input.int(200, "Length", group=groupMA, inline="ma1a", display=menuDisplay)
+offset1    = input.int(1, "Offset", group=groupMA, inline="ma1a", display=menuDisplay)
 
-showLine1  = input.bool(true, "Show MA 1", group=groupMA)
-length1    = input.int(200, "MA 1 Length", group=groupMA)
-offset1    = input.int(1, "MA 1 Price Offset", group=groupMA)
+showLine2  = input.bool(true, "MA 2", group=groupMA, inline="ma2a")
+length2    = input.int(200, "Length", group=groupMA, inline="ma2a", display=menuDisplay)
+offset2    = input.int(2, "Offset", group=groupMA, inline="ma2a", display=menuDisplay)
 
-showLine2  = input.bool(true, "Show MA 2", group=groupMA)
-length2    = input.int(200, "MA 2 Length", group=groupMA)
-offset2    = input.int(2, "MA 2 Price Offset", group=groupMA)
+showLine3  = input.bool(true, "MA 3", group=groupMA, inline="ma3a")
+length3    = input.int(200, "Length", group=groupMA, inline="ma3a", display=menuDisplay)
+offset3    = input.int(3, "Offset", group=groupMA, inline="ma3a", display=menuDisplay)
 
-showLine3  = input.bool(true, "Show MA 3", group=groupMA)
-length3    = input.int(200, "MA 3 Length", group=groupMA)
-offset3    = input.int(3, "MA 3 Price Offset", group=groupMA)
+showLine4  = input.bool(true, "MA 4", group=groupMA, inline="ma4a")
+length4    = input.int(200, "Length", group=groupMA, inline="ma4a", display=menuDisplay)
+offset4    = input.int(4, "Offset", group=groupMA, inline="ma4a", display=menuDisplay)
 
-showLine4  = input.bool(true, "Show MA 4", group=groupMA)
-length4    = input.int(200, "MA 4 Length", group=groupMA)
-offset4    = input.int(4, "MA 4 Price Offset", group=groupMA)
+showLine5  = input.bool(true, "MA 5", group=groupMA, inline="ma5a")
+length5    = input.int(200, "Length", group=groupMA, inline="ma5a", display=menuDisplay)
+offset5    = input.int(5, "Offset", group=groupMA, inline="ma5a", display=menuDisplay)
 
-showLine5  = input.bool(true, "Show MA 5", group=groupMA)
-length5    = input.int(200, "MA 5 Length", group=groupMA)
-offset5    = input.int(5, "MA 5 Price Offset", group=groupMA)
+showLine6  = input.bool(true, "MA 6", group=groupMA, inline="ma6a")
+length6    = input.int(200, "Length", group=groupMA, inline="ma6a", display=menuDisplay)
+offset6    = input.int(6, "Offset", group=groupMA, inline="ma6a", display=menuDisplay)
 
-showLine6  = input.bool(true, "Show MA 6", group=groupMA)
-length6    = input.int(200, "MA 6 Length", group=groupMA)
-offset6    = input.int(6, "MA 6 Price Offset", group=groupMA)
+showLine7  = input.bool(true, "MA 7", group=groupMA, inline="ma7a")
+length7    = input.int(200, "Length", group=groupMA, inline="ma7a", display=menuDisplay)
+offset7    = input.int(7, "Offset", group=groupMA, inline="ma7a", display=menuDisplay)
 
-showLine7  = input.bool(true, "Show MA 7", group=groupMA)
-length7    = input.int(200, "MA 7 Length", group=groupMA)
-offset7    = input.int(7, "MA 7 Price Offset", group=groupMA)
+showLine8  = input.bool(true, "MA 8", group=groupMA, inline="ma8a")
+length8    = input.int(200, "Length", group=groupMA, inline="ma8a", display=menuDisplay)
+offset8    = input.int(8, "Offset", group=groupMA, inline="ma8a", display=menuDisplay)
 
-showLine8  = input.bool(true, "Show MA 8", group=groupMA)
-length8    = input.int(200, "MA 8 Length", group=groupMA)
-offset8    = input.int(8, "MA 8 Price Offset", group=groupMA)
+showLine9  = input.bool(true, "MA 9", group=groupMA, inline="ma9a")
+length9    = input.int(200, "Length", group=groupMA, inline="ma9a", display=menuDisplay)
+offset9    = input.int(9, "Offset", group=groupMA, inline="ma9a", display=menuDisplay)
 
-showLine9  = input.bool(true, "Show MA 9", group=groupMA)
-length9    = input.int(200, "MA 9 Length", group=groupMA)
-offset9    = input.int(9, "MA 9 Price Offset", group=groupMA)
+showLine10 = input.bool(true, "MA 10", group=groupMA, inline="ma10a")
+length10   = input.int(200, "Length", group=groupMA, inline="ma10a", display=menuDisplay)
+offset10   = input.int(10, "Offset", group=groupMA, inline="ma10a", display=menuDisplay)
 
-showLine10 = input.bool(true, "Show MA 10", group=groupMA)
-length10   = input.int(200, "MA 10 Length", group=groupMA)
-offset10   = input.int(10, "MA 10 Price Offset", group=groupMA)
+fillEnable  = input.bool(false, "Show Fill", group=groupMAFill, tooltip="Visual fill between MA 1 and MA 2.")
+fillColor   = input.color(color.new(#a58700, 80), "Fill", group=groupMAFill)
 
 f_ma(src, len) =>
     var float res = na
@@ -1691,17 +1692,18 @@ fill(p1, p2, color=fillEnable ? fillColor : na)
 //=================================================================================================================================================================================
 // SECTION 8 – BOLLINGER BANDS
 //=================================================================================================================================================================================
-showBollingerBand = input.bool(true, "Enable Bollinger Bands", group=groupBB, tooltip="Bollinger Band controls.\n\nUses a selectable basis type, source, and standard deviation multiplier.")
-bbLength = input.int(1380, minval=1, title="MA Length", group=groupBB)
-maType2  = input.string("SMA", title="MA Type", options=["SMA", "EMA", "SMMA (RMA)", "WMA", "VWMA"], group=groupBB)
-src2     = input.source(close, title="Source", group=groupBB)
-mult     = input.float(2.0, minval=0.001, maxval=50, title="StdDev Multiplier", group=groupBB)
-offsetBB = input.int(0, "Offset", minval=-500, maxval=500, group=groupBB)
+bbTooltip = "Bollinger Band controls.\n\nUses the selected basis type, source, length, and standard deviation multiplier. Visual colors only affect the band plots and fill."
+showBollingerBand = input.bool(true, "Enable", group=groupBB, tooltip=bbTooltip)
+bbLength = input.int(1380, minval=1, title="Length", group=groupBB, inline="bb-core", display=menuDisplay)
+maType2  = input.string("SMA", title="Type", options=["SMA", "EMA", "SMMA (RMA)", "WMA", "VWMA"], group=groupBB, inline="bb-core")
+src2     = input.source(close, title="Source", group=groupBB, inline="bb-core", display=menuDisplay)
+mult     = input.float(2.0, minval=0.001, maxval=50, title="StdDev", group=groupBB, inline="bb-dev", display=menuDisplay)
+offsetBB = input.int(0, "Offset", minval=-500, maxval=500, group=groupBB, inline="bb-dev", display=menuDisplay)
 
-bbBasisColor = input.color(color.new(#986300, 0), "Basis Color", group=groupBB)
-bbUpperColor = input.color(color.new(color.black, 100), "Upper Band Color", group=groupBB)
-bbLowerColor = input.color(color.new(color.black, 100), "Lower Band Color", group=groupBB)
-bbFillColor  = input.color(color.rgb(183, 183, 183, 97), "Fill Color", group=groupBB)
+bbBasisColor = input.color(color.new(#986300, 0), "Basis", group=groupBB, inline="bb-colors")
+bbUpperColor = input.color(color.new(color.black, 100), "Upper", group=groupBB, inline="bb-colors")
+bbLowerColor = input.color(color.new(color.black, 100), "Lower", group=groupBB, inline="bb-colors")
+bbFillColor  = input.color(color.rgb(183, 183, 183, 97), "Fill", group=groupBB)
 
 ma_calc(_src, _len, _type) =>
     switch _type
@@ -1724,19 +1726,26 @@ fill(pUpper, pLower, title="BB Fill", color=bbFillColor)
 //=================================================================================================================================================================================
 // SECTION 9 – SESSION HIGHLIGHTING
 //=================================================================================================================================================================================
-ShowSessions = input.bool(false, "Show Sessions", group=groupSessions, tooltip="World session highlighting.\n\nShow Sessions enables the feature.\nActivate High/Low Fill shades the tracked session range instead of using the chart background.")
-bgColorToggle = input.bool(false, "Activate High/Low Fill", group=groupSessions)
+sessionTooltip = "World session highlighting.\n\nShow Sessions enables the feature. Use High/Low Fill to shade the tracked session range instead of the chart background."
+sessionFillTooltip = "When enabled, the script fills between each session's tracked high and low plots. When disabled, it uses background highlighting."
+ShowSessions = input.bool(false, "Show Sessions", group=groupSessions, inline="sess-core", tooltip=sessionTooltip)
+bgColorToggle = input.bool(false, "High/Low Fill", group=groupSessions, inline="sess-core", tooltip=sessionFillTooltip)
 
-LondonColor = input.color(color.new(color.green, 90), "London Color", group=groupSessions)
-NYColor     = input.color(color.new(color.red, 90), "NY Color", group=groupSessions)
-AsiaColor   = input.color(color.new(color.yellow, 90), "Tokyo/Asia Color", group=groupSessions)
-SydneyColor = input.color(color.new(color.blue, 90), "Sydney Color", group=groupSessions)
+resSession = input.timeframe("D", "Resolution", options=["D", "W", "M"], group=groupSessions, display=menuDisplay)
 
-resSession       = input.timeframe("D", "Session Resolution", options=["D", "W", "M"], group=groupSessions)
-londonSessionStr = input.session("0300-1200:1234567", "London Session", group=groupSessions)
-nySessionStr     = input.session("0800-1700:1234567", "New York Session", group=groupSessions)
-tokyoSessionStr  = input.session("2000-0400:1234567", "Tokyo Session", group=groupSessions)
-sydneySessionStr = input.session("1700-0200:1234567", "Sydney Session", group=groupSessions)
+LondonEnabled = input.bool(true, "London", group=groupSessions, inline="sess-london")
+LondonColor = input.color(color.new(color.green, 90), "Color", group=groupSessions, inline="sess-london")
+NYEnabled = input.bool(true, "New York", group=groupSessions, inline="sess-ny")
+NYColor = input.color(color.new(color.red, 90), "Color", group=groupSessions, inline="sess-ny")
+TokyoEnabled = input.bool(true, "Tokyo / Asia", group=groupSessions, inline="sess-tokyo")
+AsiaColor = input.color(color.new(color.yellow, 90), "Color", group=groupSessions, inline="sess-tokyo")
+SydneyEnabled = input.bool(true, "Sydney", group=groupSessions, inline="sess-sydney")
+SydneyColor = input.color(color.new(color.blue, 90), "Color", group=groupSessions, inline="sess-sydney")
+
+londonSessionStr = input.session("0300-1200:1234567", "London Hours", group=groupSessions, display=menuDisplay)
+nySessionStr     = input.session("0800-1700:1234567", "New York Hours", group=groupSessions, display=menuDisplay)
+tokyoSessionStr  = input.session("2000-0400:1234567", "Tokyo Hours", group=groupSessions, display=menuDisplay)
+sydneySessionStr = input.session("1700-0200:1234567", "Sydney Hours", group=groupSessions, display=menuDisplay)
 
 is_newbar(sess) =>
     t = time(resSession, sess, "America/New_York")
@@ -1744,11 +1753,6 @@ is_newbar(sess) =>
 
 is_session(sess) =>
     not na(time(timeframe.period, sess, "America/New_York"))
-
-LondonEnabled = input.bool(true, "London Session", group=groupSessions)
-NYEnabled     = input.bool(true, "New York Session", group=groupSessions)
-TokyoEnabled  = input.bool(true, "Tokyo Session", group=groupSessions)
-SydneyEnabled = input.bool(true, "Sydney Session", group=groupSessions)
 
 var float londonLow  = na
 var float londonHigh = na
@@ -1813,6 +1817,23 @@ bgcolor((is_session(sydneySessionStr) and SydneyEnabled and not bgColorToggle an
 //=================================================================================================================
 // SECTION 10 – FUTURES VALUE PANEL DATA
 //=================================================================================================================
+futuresPanelTooltip = "Futures value reference panel.\n\nShows dollars per tick and/or dollars per point for curated futures contracts plus the current chart symbol."
+futuresCustomTooltip = "Optional comma-separated list of supported roots to show after the current symbol row.\n\nExample: ES,NQ,CL,GC,BTC,MBT,SI,HG\n\nIf left blank, the panel uses the curated default list. TradingView Pine cannot read your platform watchlist directly."
+showFuturesValuePanel = input.bool(true, "Show Panel", group=groupFutures, inline="fp-core", tooltip=futuresPanelTooltip)
+futuresPanelLocation = input.string("Top Right", "Location", options=["Top Left", "Top Right", "Bottom Left", "Bottom Right"], group=groupFutures, inline="fp-core", display=menuDisplay)
+
+futuresDisplayMode = input.string("Both", "Mode", options=["$ / Tick", "$ / Point", "Both"], group=groupFutures, inline="fp-mode")
+futuresTextSizeInput = input.string("Small", "Text Size", options=["Tiny", "Small", "Normal"], group=groupFutures, inline="fp-mode", display=menuDisplay)
+
+highlightCurrentSymbol = input.bool(true, "Highlight Current", group=groupFutures, inline="fp-toggles")
+compactFuturesMode = input.bool(false, "Compact", group=groupFutures, inline="fp-toggles")
+futuresCustomList = input.string("", "Custom Symbols", group=groupFutures, tooltip=futuresCustomTooltip, display=menuDisplay)
+
+futuresPanelBgColor = input.color(color.new(color.black, 80), "Background", group=groupFutures, inline="fp-colors")
+futuresHeaderBgColor = input.color(color.new(#a58700, 10), "Header", group=groupFutures, inline="fp-colors")
+futuresBorderColor = input.color(color.new(color.white, 60), "Border", group=groupFutures, inline="fp-style")
+futuresPanelTextColor = input.color(color.white, "Text", group=groupFutures, inline="fp-style")
+
 var futuresSymbols = array.from("MNQ","NQ","MES","ES","M2K","RTY","MYM","YM","BTC","MBT","ETH","MET","MGC","GC","SIL","SI","PA","PL","HG","MCL","CL","QM","NG","QG","RB","HO","ZN","ZB","ZF","ZT","UB","6E","M6E","6J","M6J","6B","M6B","6A","M6A","6C","6S")
 var futuresTickVals = array.from(0.50,5.00,1.25,12.50,0.50,5.00,0.50,5.00,5.00,0.10,0.50,0.05,1.00,10.00,5.00,25.00,10.00,5.00,12.50,1.00,10.00,12.50,10.00,25.00,4.20,4.20,15.625,31.25,7.8125,15.625,31.25,6.25,1.25,6.25,1.25,6.25,1.25,10.00,1.00,10.00,12.50)
 var futuresPointVals = array.from(2.00,20.00,5.00,50.00,5.00,50.00,0.50,5.00,5.00,0.10,0.50,0.05,10.00,100.00,1000.00,5000.00,100.00,50.00,25000.00,100.00,1000.00,12500.00,10000.00,25000.00,42000.00,42000.00,1000.00,1000.00,1000.00,1000.00,1000.00,125000.00,25000.00,125000.00,25000.00,62500.00,12500.00,100000.00,10000.00,100000.00,125000.00)
