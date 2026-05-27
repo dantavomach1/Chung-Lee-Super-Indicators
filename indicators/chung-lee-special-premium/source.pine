@@ -384,7 +384,7 @@ f_trim_zone_fill_boxes(_boxes, _maxBoxes) =>
 f_update_zone_fill_boxes(_boxes, _active, _reset, _newSegment, _left, _right, _top, _bottom, _bgColor, _maxBoxes) =>
     if not _active or na(_left) or na(_right) or na(_top) or na(_bottom)
         f_clear_zone_fill_boxes(_boxes)
-    else
+    else if _right > _left
         zoneTop = math.max(_top, _bottom)
         zoneBottom = math.min(_top, _bottom)
         if _reset
@@ -1040,7 +1040,7 @@ clH1GapLeftTime = nz(clCurrentHourStartTime, time)
 
 clBreakoutZoneFloatingMode = clBreakoutZoneDisplayMode == "Floating Window"
 clBreakoutZoneFillMode = clBreakoutZoneDisplayMode == "Fill Between Candles"
-clMaxBreakoutFillSegments = 12
+clMaxBreakoutFillSegments = 40
 
 upperStackLeftBarIndex = ta.valuewhen(clUpperStackDataReady and time <= upperStackLeftTime and time + clBarMs > upperStackLeftTime, bar_index, 0)
 upperStackRightBarIndex = ta.valuewhen(clUpperStackDataReady and time <= upperStackRightTime and time + clBarMs > upperStackRightTime, bar_index, 0)
@@ -1156,39 +1156,48 @@ monthlyLowerFillVisible = monthlyLowerStackActive and clBreakoutZoneFillMode and
 h1UpperFillVisible = clUpperH1GapVisible and clBreakoutZoneFillMode and time >= clH1GapLeftTime
 h1LowerFillVisible = clLowerH1GapVisible and clBreakoutZoneFillMode and time >= clH1GapLeftTime
 
-upperStackFillRightTime = clExtendStackZonesRight ? time + clBarMs * clFloatingWindowBarsForward : upperStackRightTime
-lowerStackFillRightTime = clExtendStackZonesRight ? time + clBarMs * clFloatingWindowBarsForward : lowerStackRightTime
-weeklyUpperFillRightTime = clExtendWeeklyDailyStackZonesRight ? time + clBarMs * clFloatingWindowBarsForward : weeklyUpperRightTime
-weeklyLowerFillRightTime = clExtendWeeklyDailyStackZonesRight ? time + clBarMs * clFloatingWindowBarsForward : weeklyLowerRightTime
-monthlyUpperFillRightTime = clExtendMonthlyDailyStackZonesRight ? time + clBarMs * clFloatingWindowBarsForward : monthlyUpperRightTime
-monthlyLowerFillRightTime = clExtendMonthlyDailyStackZonesRight ? time + clBarMs * clFloatingWindowBarsForward : monthlyLowerRightTime
+upperStackFillRightTime = clExtendStackZonesRight ? time + clBarMs * clFloatingWindowBarsForward : math.min(time + clBarMs, upperStackRightTime)
+lowerStackFillRightTime = clExtendStackZonesRight ? time + clBarMs * clFloatingWindowBarsForward : math.min(time + clBarMs, lowerStackRightTime)
+weeklyUpperFillRightTime = clExtendWeeklyDailyStackZonesRight ? time + clBarMs * clFloatingWindowBarsForward : math.min(time + clBarMs, weeklyUpperRightTime)
+weeklyLowerFillRightTime = clExtendWeeklyDailyStackZonesRight ? time + clBarMs * clFloatingWindowBarsForward : math.min(time + clBarMs, weeklyLowerRightTime)
+monthlyUpperFillRightTime = clExtendMonthlyDailyStackZonesRight ? time + clBarMs * clFloatingWindowBarsForward : math.min(time + clBarMs, monthlyUpperRightTime)
+monthlyLowerFillRightTime = clExtendMonthlyDailyStackZonesRight ? time + clBarMs * clFloatingWindowBarsForward : math.min(time + clBarMs, monthlyLowerRightTime)
 h1GapFillRightTime = clExtendH1GapsRight ? time + clBarMs * clFloatingWindowBarsForward : clZoneRightTime
 
-upperStackFillReset = upperStackFillVisible and (not nz(upperStackFillVisible[1], false) or nz(ta.change(clPreviousDayHigh)) != 0 or nz(ta.change(upperStackLeftTime)) != 0)
-upperStackFillNewSegment = upperStackFillVisible and (upperStackFillReset or nz(ta.change(clLatestClosed4HHigh)) != 0)
-lowerStackFillReset = lowerStackFillVisible and (not nz(lowerStackFillVisible[1], false) or nz(ta.change(clPreviousDayLow)) != 0 or nz(ta.change(lowerStackLeftTime)) != 0)
-lowerStackFillNewSegment = lowerStackFillVisible and (lowerStackFillReset or nz(ta.change(clLatestClosed4HLow)) != 0)
-weeklyUpperFillReset = weeklyUpperFillVisible and (not nz(weeklyUpperFillVisible[1], false) or nz(ta.change(clPreviousWeekHigh)) != 0 or nz(ta.change(weeklyUpperLeftTime)) != 0)
-weeklyUpperFillNewSegment = weeklyUpperFillVisible and (weeklyUpperFillReset or nz(ta.change(clLatestClosedDailyHigh)) != 0)
-weeklyLowerFillReset = weeklyLowerFillVisible and (not nz(weeklyLowerFillVisible[1], false) or nz(ta.change(clPreviousWeekLow)) != 0 or nz(ta.change(weeklyLowerLeftTime)) != 0)
-weeklyLowerFillNewSegment = weeklyLowerFillVisible and (weeklyLowerFillReset or nz(ta.change(clLatestClosedDailyLow)) != 0)
-monthlyUpperFillReset = monthlyUpperFillVisible and (not nz(monthlyUpperFillVisible[1], false) or nz(ta.change(clPreviousMonthHigh)) != 0 or nz(ta.change(monthlyUpperLeftTime)) != 0)
-monthlyUpperFillNewSegment = monthlyUpperFillVisible and (monthlyUpperFillReset or nz(ta.change(clLatestClosedDailyHigh)) != 0)
-monthlyLowerFillReset = monthlyLowerFillVisible and (not nz(monthlyLowerFillVisible[1], false) or nz(ta.change(clPreviousMonthLow)) != 0 or nz(ta.change(monthlyLowerLeftTime)) != 0)
-monthlyLowerFillNewSegment = monthlyLowerFillVisible and (monthlyLowerFillReset or nz(ta.change(clLatestClosedDailyLow)) != 0)
-h1UpperFillReset = h1UpperFillVisible and (not nz(h1UpperFillVisible[1], false) or nz(ta.change(clPreviousHourHigh)) != 0 or nz(ta.change(clH1GapLeftTime)) != 0)
-h1UpperFillNewSegment = h1UpperFillVisible and (h1UpperFillReset or nz(ta.change(clCurrentHourHigh)) != 0)
-h1LowerFillReset = h1LowerFillVisible and (not nz(h1LowerFillVisible[1], false) or nz(ta.change(clPreviousHourLow)) != 0 or nz(ta.change(clH1GapLeftTime)) != 0)
-h1LowerFillNewSegment = h1LowerFillVisible and (h1LowerFillReset or nz(ta.change(clCurrentHourLow)) != 0)
+upperStackCandleTop = math.min(high, clPreviousDayHigh)
+lowerStackCandleBottom = math.max(low, clPreviousDayLow)
+weeklyUpperCandleTop = math.min(high, clPreviousWeekHigh)
+weeklyLowerCandleBottom = math.max(low, clPreviousWeekLow)
+monthlyUpperCandleTop = math.min(high, clPreviousMonthHigh)
+monthlyLowerCandleBottom = math.max(low, clPreviousMonthLow)
+h1UpperCandleTop = math.min(high, clPreviousHourHigh)
+h1LowerCandleBottom = math.max(low, clPreviousHourLow)
 
-f_update_zone_fill_boxes(clUpperStackFillBoxes, upperStackFillVisible, upperStackFillReset, upperStackFillNewSegment, upperStackLeftTime, upperStackFillRightTime, clPreviousDayHigh, clLatestClosed4HHigh, clStackUpperBg, clMaxBreakoutFillSegments)
-f_update_zone_fill_boxes(clLowerStackFillBoxes, lowerStackFillVisible, lowerStackFillReset, lowerStackFillNewSegment, lowerStackLeftTime, lowerStackFillRightTime, clLatestClosed4HLow, clPreviousDayLow, clStackLowerBg, clMaxBreakoutFillSegments)
-f_update_zone_fill_boxes(clWeeklyUpperStackFillBoxes, weeklyUpperFillVisible, weeklyUpperFillReset, weeklyUpperFillNewSegment, weeklyUpperLeftTime, weeklyUpperFillRightTime, clPreviousWeekHigh, clLatestClosedDailyHigh, clWeeklyStackUpperBg, clMaxBreakoutFillSegments)
-f_update_zone_fill_boxes(clWeeklyLowerStackFillBoxes, weeklyLowerFillVisible, weeklyLowerFillReset, weeklyLowerFillNewSegment, weeklyLowerLeftTime, weeklyLowerFillRightTime, clLatestClosedDailyLow, clPreviousWeekLow, clWeeklyStackLowerBg, clMaxBreakoutFillSegments)
-f_update_zone_fill_boxes(clMonthlyUpperStackFillBoxes, monthlyUpperFillVisible, monthlyUpperFillReset, monthlyUpperFillNewSegment, monthlyUpperLeftTime, monthlyUpperFillRightTime, clPreviousMonthHigh, clLatestClosedDailyHigh, clMonthlyStackUpperBg, clMaxBreakoutFillSegments)
-f_update_zone_fill_boxes(clMonthlyLowerStackFillBoxes, monthlyLowerFillVisible, monthlyLowerFillReset, monthlyLowerFillNewSegment, monthlyLowerLeftTime, monthlyLowerFillRightTime, clLatestClosedDailyLow, clPreviousMonthLow, clMonthlyStackLowerBg, clMaxBreakoutFillSegments)
-f_update_zone_fill_boxes(clUpperH1GapFillBoxes, h1UpperFillVisible, h1UpperFillReset, h1UpperFillNewSegment, clH1GapLeftTime, h1GapFillRightTime, clPreviousHourHigh, clCurrentHourHigh, clH1UpperBg, clMaxBreakoutFillSegments)
-f_update_zone_fill_boxes(clLowerH1GapFillBoxes, h1LowerFillVisible, h1LowerFillReset, h1LowerFillNewSegment, clH1GapLeftTime, h1GapFillRightTime, clCurrentHourLow, clPreviousHourLow, clH1LowerBg, clMaxBreakoutFillSegments)
+upperStackFillReset = upperStackFillVisible and (not nz(upperStackFillVisible[1], false) or nz(ta.change(clPreviousDayHigh)) != 0 or nz(ta.change(upperStackLeftTime)) != 0)
+upperStackFillNewSegment = upperStackFillVisible and (upperStackFillReset or barstate.isnew)
+lowerStackFillReset = lowerStackFillVisible and (not nz(lowerStackFillVisible[1], false) or nz(ta.change(clPreviousDayLow)) != 0 or nz(ta.change(lowerStackLeftTime)) != 0)
+lowerStackFillNewSegment = lowerStackFillVisible and (lowerStackFillReset or barstate.isnew)
+weeklyUpperFillReset = weeklyUpperFillVisible and (not nz(weeklyUpperFillVisible[1], false) or nz(ta.change(clPreviousWeekHigh)) != 0 or nz(ta.change(weeklyUpperLeftTime)) != 0)
+weeklyUpperFillNewSegment = weeklyUpperFillVisible and (weeklyUpperFillReset or barstate.isnew)
+weeklyLowerFillReset = weeklyLowerFillVisible and (not nz(weeklyLowerFillVisible[1], false) or nz(ta.change(clPreviousWeekLow)) != 0 or nz(ta.change(weeklyLowerLeftTime)) != 0)
+weeklyLowerFillNewSegment = weeklyLowerFillVisible and (weeklyLowerFillReset or barstate.isnew)
+monthlyUpperFillReset = monthlyUpperFillVisible and (not nz(monthlyUpperFillVisible[1], false) or nz(ta.change(clPreviousMonthHigh)) != 0 or nz(ta.change(monthlyUpperLeftTime)) != 0)
+monthlyUpperFillNewSegment = monthlyUpperFillVisible and (monthlyUpperFillReset or barstate.isnew)
+monthlyLowerFillReset = monthlyLowerFillVisible and (not nz(monthlyLowerFillVisible[1], false) or nz(ta.change(clPreviousMonthLow)) != 0 or nz(ta.change(monthlyLowerLeftTime)) != 0)
+monthlyLowerFillNewSegment = monthlyLowerFillVisible and (monthlyLowerFillReset or barstate.isnew)
+h1UpperFillReset = h1UpperFillVisible and (not nz(h1UpperFillVisible[1], false) or nz(ta.change(clPreviousHourHigh)) != 0 or nz(ta.change(clH1GapLeftTime)) != 0)
+h1UpperFillNewSegment = h1UpperFillVisible and (h1UpperFillReset or barstate.isnew)
+h1LowerFillReset = h1LowerFillVisible and (not nz(h1LowerFillVisible[1], false) or nz(ta.change(clPreviousHourLow)) != 0 or nz(ta.change(clH1GapLeftTime)) != 0)
+h1LowerFillNewSegment = h1LowerFillVisible and (h1LowerFillReset or barstate.isnew)
+
+f_update_zone_fill_boxes(clUpperStackFillBoxes, upperStackFillVisible, upperStackFillReset, upperStackFillNewSegment, time, upperStackFillRightTime, clPreviousDayHigh, upperStackCandleTop, clStackUpperBg, clMaxBreakoutFillSegments)
+f_update_zone_fill_boxes(clLowerStackFillBoxes, lowerStackFillVisible, lowerStackFillReset, lowerStackFillNewSegment, time, lowerStackFillRightTime, lowerStackCandleBottom, clPreviousDayLow, clStackLowerBg, clMaxBreakoutFillSegments)
+f_update_zone_fill_boxes(clWeeklyUpperStackFillBoxes, weeklyUpperFillVisible, weeklyUpperFillReset, weeklyUpperFillNewSegment, time, weeklyUpperFillRightTime, clPreviousWeekHigh, weeklyUpperCandleTop, clWeeklyStackUpperBg, clMaxBreakoutFillSegments)
+f_update_zone_fill_boxes(clWeeklyLowerStackFillBoxes, weeklyLowerFillVisible, weeklyLowerFillReset, weeklyLowerFillNewSegment, time, weeklyLowerFillRightTime, weeklyLowerCandleBottom, clPreviousWeekLow, clWeeklyStackLowerBg, clMaxBreakoutFillSegments)
+f_update_zone_fill_boxes(clMonthlyUpperStackFillBoxes, monthlyUpperFillVisible, monthlyUpperFillReset, monthlyUpperFillNewSegment, time, monthlyUpperFillRightTime, clPreviousMonthHigh, monthlyUpperCandleTop, clMonthlyStackUpperBg, clMaxBreakoutFillSegments)
+f_update_zone_fill_boxes(clMonthlyLowerStackFillBoxes, monthlyLowerFillVisible, monthlyLowerFillReset, monthlyLowerFillNewSegment, time, monthlyLowerFillRightTime, monthlyLowerCandleBottom, clPreviousMonthLow, clMonthlyStackLowerBg, clMaxBreakoutFillSegments)
+f_update_zone_fill_boxes(clUpperH1GapFillBoxes, h1UpperFillVisible, h1UpperFillReset, h1UpperFillNewSegment, time, h1GapFillRightTime, clPreviousHourHigh, h1UpperCandleTop, clH1UpperBg, clMaxBreakoutFillSegments)
+f_update_zone_fill_boxes(clLowerH1GapFillBoxes, h1LowerFillVisible, h1LowerFillReset, h1LowerFillNewSegment, time, h1GapFillRightTime, h1LowerCandleBottom, clPreviousHourLow, clH1LowerBg, clMaxBreakoutFillSegments)
 
 if upperStackActive
     if clBreakoutZoneFillMode
@@ -1207,7 +1216,8 @@ if upperStackActive
             clUpperStackLabel := na
     if clShowPointsTillBreakLabels
         upperStackPointsX = clBreakoutZoneFloatingMode ? f_floating_points_label_x() : f_points_label_x(upperStackLeftBarIndex, upperStackRightBarIndex, clExtendStackZonesRight)
-        clUpperStackPointsLabel := f_update_points_label(clUpperStackPointsLabel, upperStackPointsX, (clPreviousDayHigh + clLatestClosed4HHigh) / 2.0, f_points_text(clPreviousDayHigh - close), clPointsTillBreakLabelTextColor, f_zone_label_size(clPointsTillBreakLabelSizeInput))
+        upperStackPointsY = clBreakoutZoneFillMode ? (clPreviousDayHigh + upperStackCandleTop) / 2.0 : (upperStackTop + upperStackBottom) / 2.0
+        clUpperStackPointsLabel := f_update_points_label(clUpperStackPointsLabel, upperStackPointsX, upperStackPointsY, f_points_text(clPreviousDayHigh - close), clPointsTillBreakLabelTextColor, f_zone_label_size(clPointsTillBreakLabelSizeInput))
     else
         if not na(clUpperStackPointsLabel)
             label.delete(clUpperStackPointsLabel)
@@ -1256,7 +1266,8 @@ if lowerStackActive
             clLowerStackLabel := na
     if clShowPointsTillBreakLabels
         lowerStackPointsX = clBreakoutZoneFloatingMode ? f_floating_points_label_x() : f_points_label_x(lowerStackLeftBarIndex, lowerStackRightBarIndex, clExtendStackZonesRight)
-        clLowerStackPointsLabel := f_update_points_label(clLowerStackPointsLabel, lowerStackPointsX, (clPreviousDayLow + clLatestClosed4HLow) / 2.0, f_points_text(close - clPreviousDayLow), clPointsTillBreakLabelTextColor, f_zone_label_size(clPointsTillBreakLabelSizeInput))
+        lowerStackPointsY = clBreakoutZoneFillMode ? (clPreviousDayLow + lowerStackCandleBottom) / 2.0 : (lowerStackTop + lowerStackBottom) / 2.0
+        clLowerStackPointsLabel := f_update_points_label(clLowerStackPointsLabel, lowerStackPointsX, lowerStackPointsY, f_points_text(close - clPreviousDayLow), clPointsTillBreakLabelTextColor, f_zone_label_size(clPointsTillBreakLabelSizeInput))
     else
         if not na(clLowerStackPointsLabel)
             label.delete(clLowerStackPointsLabel)
@@ -1305,7 +1316,8 @@ if weeklyUpperStackActive
             clWeeklyUpperStackLabel := na
     if clShowPointsTillBreakLabels
         weeklyUpperPointsX = clBreakoutZoneFloatingMode ? f_floating_points_label_x() : f_points_label_x(weeklyUpperLeftBarIndex, weeklyUpperRightBarIndex, clExtendWeeklyDailyStackZonesRight)
-        clWeeklyUpperStackPointsLabel := f_update_points_label(clWeeklyUpperStackPointsLabel, weeklyUpperPointsX, (clPreviousWeekHigh + clLatestClosedDailyHigh) / 2.0, f_points_text(clPreviousWeekHigh - close), clPointsTillBreakLabelTextColor, f_zone_label_size(clPointsTillBreakLabelSizeInput))
+        weeklyUpperPointsY = clBreakoutZoneFillMode ? (clPreviousWeekHigh + weeklyUpperCandleTop) / 2.0 : (weeklyUpperStackTop + weeklyUpperStackBottom) / 2.0
+        clWeeklyUpperStackPointsLabel := f_update_points_label(clWeeklyUpperStackPointsLabel, weeklyUpperPointsX, weeklyUpperPointsY, f_points_text(clPreviousWeekHigh - close), clPointsTillBreakLabelTextColor, f_zone_label_size(clPointsTillBreakLabelSizeInput))
     else
         if not na(clWeeklyUpperStackPointsLabel)
             label.delete(clWeeklyUpperStackPointsLabel)
@@ -1338,7 +1350,8 @@ if weeklyLowerStackActive
             clWeeklyLowerStackLabel := na
     if clShowPointsTillBreakLabels
         weeklyLowerPointsX = clBreakoutZoneFloatingMode ? f_floating_points_label_x() : f_points_label_x(weeklyLowerLeftBarIndex, weeklyLowerRightBarIndex, clExtendWeeklyDailyStackZonesRight)
-        clWeeklyLowerStackPointsLabel := f_update_points_label(clWeeklyLowerStackPointsLabel, weeklyLowerPointsX, (clPreviousWeekLow + clLatestClosedDailyLow) / 2.0, f_points_text(close - clPreviousWeekLow), clPointsTillBreakLabelTextColor, f_zone_label_size(clPointsTillBreakLabelSizeInput))
+        weeklyLowerPointsY = clBreakoutZoneFillMode ? (clPreviousWeekLow + weeklyLowerCandleBottom) / 2.0 : (weeklyLowerStackTop + weeklyLowerStackBottom) / 2.0
+        clWeeklyLowerStackPointsLabel := f_update_points_label(clWeeklyLowerStackPointsLabel, weeklyLowerPointsX, weeklyLowerPointsY, f_points_text(close - clPreviousWeekLow), clPointsTillBreakLabelTextColor, f_zone_label_size(clPointsTillBreakLabelSizeInput))
     else
         if not na(clWeeklyLowerStackPointsLabel)
             label.delete(clWeeklyLowerStackPointsLabel)
@@ -1371,7 +1384,8 @@ if monthlyUpperStackActive
             clMonthlyUpperStackLabel := na
     if clShowPointsTillBreakLabels
         monthlyUpperPointsX = clBreakoutZoneFloatingMode ? f_floating_points_label_x() : f_points_label_x(monthlyUpperLeftBarIndex, monthlyUpperRightBarIndex, clExtendMonthlyDailyStackZonesRight)
-        clMonthlyUpperStackPointsLabel := f_update_points_label(clMonthlyUpperStackPointsLabel, monthlyUpperPointsX, (clPreviousMonthHigh + clLatestClosedDailyHigh) / 2.0, f_points_text(clPreviousMonthHigh - close), clPointsTillBreakLabelTextColor, f_zone_label_size(clPointsTillBreakLabelSizeInput))
+        monthlyUpperPointsY = clBreakoutZoneFillMode ? (clPreviousMonthHigh + monthlyUpperCandleTop) / 2.0 : (monthlyUpperStackTop + monthlyUpperStackBottom) / 2.0
+        clMonthlyUpperStackPointsLabel := f_update_points_label(clMonthlyUpperStackPointsLabel, monthlyUpperPointsX, monthlyUpperPointsY, f_points_text(clPreviousMonthHigh - close), clPointsTillBreakLabelTextColor, f_zone_label_size(clPointsTillBreakLabelSizeInput))
     else
         if not na(clMonthlyUpperStackPointsLabel)
             label.delete(clMonthlyUpperStackPointsLabel)
@@ -1404,7 +1418,8 @@ if monthlyLowerStackActive
             clMonthlyLowerStackLabel := na
     if clShowPointsTillBreakLabels
         monthlyLowerPointsX = clBreakoutZoneFloatingMode ? f_floating_points_label_x() : f_points_label_x(monthlyLowerLeftBarIndex, monthlyLowerRightBarIndex, clExtendMonthlyDailyStackZonesRight)
-        clMonthlyLowerStackPointsLabel := f_update_points_label(clMonthlyLowerStackPointsLabel, monthlyLowerPointsX, (clPreviousMonthLow + clLatestClosedDailyLow) / 2.0, f_points_text(close - clPreviousMonthLow), clPointsTillBreakLabelTextColor, f_zone_label_size(clPointsTillBreakLabelSizeInput))
+        monthlyLowerPointsY = clBreakoutZoneFillMode ? (clPreviousMonthLow + monthlyLowerCandleBottom) / 2.0 : (monthlyLowerStackTop + monthlyLowerStackBottom) / 2.0
+        clMonthlyLowerStackPointsLabel := f_update_points_label(clMonthlyLowerStackPointsLabel, monthlyLowerPointsX, monthlyLowerPointsY, f_points_text(close - clPreviousMonthLow), clPointsTillBreakLabelTextColor, f_zone_label_size(clPointsTillBreakLabelSizeInput))
     else
         if not na(clMonthlyLowerStackPointsLabel)
             label.delete(clMonthlyLowerStackPointsLabel)
@@ -1437,7 +1452,8 @@ if clUpperH1GapVisible
             clUpperH1GapLabel := na
     if clShowPointsTillBreakLabels
         h1UpperPointsX = clBreakoutZoneFloatingMode ? f_floating_points_label_x() : f_points_label_x(h1GapLeftBarIndex, bar_index, clExtendH1GapsRight)
-        clUpperH1GapPointsLabel := f_update_points_label(clUpperH1GapPointsLabel, h1UpperPointsX, (clPreviousHourHigh + clCurrentHourHigh) / 2.0, f_points_text(clPreviousHourHigh - close), clPointsTillBreakLabelTextColor, f_zone_label_size(clPointsTillBreakLabelSizeInput))
+        h1UpperPointsY = clBreakoutZoneFillMode ? (clPreviousHourHigh + h1UpperCandleTop) / 2.0 : (h1UpperGapTop + h1UpperGapBottom) / 2.0
+        clUpperH1GapPointsLabel := f_update_points_label(clUpperH1GapPointsLabel, h1UpperPointsX, h1UpperPointsY, f_points_text(clPreviousHourHigh - close), clPointsTillBreakLabelTextColor, f_zone_label_size(clPointsTillBreakLabelSizeInput))
     else
         if not na(clUpperH1GapPointsLabel)
             label.delete(clUpperH1GapPointsLabel)
@@ -1470,7 +1486,8 @@ if clLowerH1GapVisible
             clLowerH1GapLabel := na
     if clShowPointsTillBreakLabels
         h1LowerPointsX = clBreakoutZoneFloatingMode ? f_floating_points_label_x() : f_points_label_x(h1GapLeftBarIndex, bar_index, clExtendH1GapsRight)
-        clLowerH1GapPointsLabel := f_update_points_label(clLowerH1GapPointsLabel, h1LowerPointsX, (clPreviousHourLow + clCurrentHourLow) / 2.0, f_points_text(close - clPreviousHourLow), clPointsTillBreakLabelTextColor, f_zone_label_size(clPointsTillBreakLabelSizeInput))
+        h1LowerPointsY = clBreakoutZoneFillMode ? (clPreviousHourLow + h1LowerCandleBottom) / 2.0 : (h1LowerGapTop + h1LowerGapBottom) / 2.0
+        clLowerH1GapPointsLabel := f_update_points_label(clLowerH1GapPointsLabel, h1LowerPointsX, h1LowerPointsY, f_points_text(close - clPreviousHourLow), clPointsTillBreakLabelTextColor, f_zone_label_size(clPointsTillBreakLabelSizeInput))
     else
         if not na(clLowerH1GapPointsLabel)
             label.delete(clLowerH1GapPointsLabel)
