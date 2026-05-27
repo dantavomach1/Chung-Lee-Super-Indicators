@@ -51,16 +51,11 @@ f_overlay_window_ok(selection) =>
 groupOverlays    = "HTF Candle Overlays"
 groupLabels      = "Overlay Labels"
 groupMA          = "Moving Average Suite"
-groupFA          = "MA Fill and Cross Alerts"
+groupFA          = "MA Fill"
 groupBB          = "Bollinger Bands"
 groupSessions    = "Session Highlighting"
 groupFutures     = "Futures Value Panel"
-groupStackZones  = "Daily / 4H Stack Zones"
-groupWeeklyStackZones = "Weekly / Daily Stack Zones"
-groupMonthlyStackZones = "Monthly / Daily Stack Zones"
-groupH1GapZones  = "H1 Sweep Gap Zones"
-groupZoneAlerts  = "Zone Alerts"
-groupHtfDistanceTable = "HTF Distance Table"
+groupBreakoutZones = "Breakout Zones"
 
 showHourlyOverlay   = input.bool(true, "Show 1H Overlay", group=groupOverlays, inline="ov1", tooltip="Higher-timeframe candle overlays.\n\nUse the master toggles to enable 1H / 4H / Daily overlays.\nUse the timeframe filters to decide which chart timeframes each overlay can appear on.\nOverlay Lookback limits how far back closed and live overlay objects are allowed to draw.")
 showFourHourOverlay = input.bool(true, "Show 4H Overlay", group=groupOverlays, inline="ov2")
@@ -102,120 +97,47 @@ allowDailyOverlay    = showDailyOverlay and AllowedTime and (not dailyFilterEnab
 tzOverlay = "America/Los_Angeles"
 
 //=================================================================================================================
-// SECTION 1.25 – STRUCTURAL ZONE INPUTS
+// SECTION 1.25 - BREAKOUT ZONE INPUTS
 //=================================================================================================================
-clShowStackZones              = input.bool(true, "Show Daily / 4H Stack Zones", group=groupStackZones)
-clShowUpperStackZone          = input.bool(true, "Show Upper Daily / 4H Stack Zone", group=groupStackZones, inline="st1")
-clShowLowerStackZone          = input.bool(true, "Show Lower Daily / 4H Stack Zone", group=groupStackZones, inline="st1")
-clUpperStackFillColor         = input.color(color.new(#a58700, 0), "Upper Stack Zone fill color", group=groupStackZones, inline="st2")
-clLowerStackFillColor         = input.color(color.new(#6f7f91, 0), "Lower Stack Zone fill color", group=groupStackZones, inline="st2")
-clStackFillTransparency       = input.int(88, "Stack Zone fill transparency / opacity", minval=0, maxval=100, group=groupStackZones)
-clStackBorderColor            = input.color(color.new(color.white, 0), "Stack Zone border color", group=groupStackZones, inline="st3")
-clStackBorderTransparency     = input.int(85, "Stack Zone border transparency / opacity", minval=0, maxval=100, group=groupStackZones, inline="st3")
-clStackBorderWidth            = input.int(1, "Stack Zone border width", minval=0, maxval=5, group=groupStackZones)
-clShowStackLabels             = input.bool(false, "Show Stack Zone labels", group=groupStackZones, inline="st4")
-clStackLabelTextColor         = input.color(color.new(color.white, 0), "Stack Zone label text color", group=groupStackZones, inline="st4")
-clStackLabelSizeInput         = input.string("Small", "Stack Zone label size", options=["Tiny", "Small", "Normal", "Large"], group=groupStackZones)
-clShowStackAnchorMarkers      = input.bool(false, "Show Stack Zone anchor markers", group=groupStackZones, tooltip="Optional quiet markers for the exact prior-day and latest closed 4H high/low anchor bars.")
-clStackLeftAnchorMode         = input.string("Actual referenced points", "Stack Zone left anchor mode", options=["Actual referenced points"], group=groupStackZones)
-clExtendStackZonesRight       = input.bool(true, "Extend Stack Zones Right", group=groupStackZones)
-clBreakoutZoneDisplayMode     = input.string("Anchored breakout zones", "Breakout Zone Display Mode", options=["Anchored breakout zones", "Fitted breakout zones", "Floating breakout zones"], group=groupStackZones)
-clFittedBreakoutExtendRight   = input.bool(true, "Fitted breakout right extension", group=groupStackZones)
-clFittedBreakoutExtensionBars = input.int(75, "Fitted breakout extension bars", minval=0, maxval=500, group=groupStackZones)
-clFloatingWindowBarsBack      = input.int(5, "Floating breakout bars back", minval=0, group=groupStackZones)
-clFloatingWindowBarsForward   = input.int(75, "Floating breakout bars forward", minval=1, group=groupStackZones)
-clShowPointsTillBreakLabels   = input.bool(true, "Show Points Till Break Labels", group=groupStackZones)
-clPointsTillBreakOffsetBars   = input.int(10, "Points Till Break Label Offset Bars", minval=0, group=groupStackZones)
-clPointsTillBreakLabelTextColor = input.color(color.new(color.white, 0), "Points Till Break Label Text Color", group=groupStackZones)
-clPointsTillBreakLabelSizeInput = input.string("Small", "Points Till Break Label Size", options=["Tiny", "Small", "Normal", "Large"], group=groupStackZones)
+// MENU LAYOUT RULES:
+// - Keep all breakout-zone controls under groupBreakoutZones.
+// - Do not add separate upper/lower visibility toggles.
+// - Use one shared upper color and one shared lower color for all breakout families.
+// - Put major dropdowns on their own line.
+// - Only inline very small related inputs.
+// - Use tooltips for long explanations instead of long menu labels.
+clShowBreakoutZones = input.bool(true, "Show Breakout Zones", group=groupBreakoutZones)
 
-clShowWeeklyDailyStackZones              = input.bool(false, "Show Weekly / Daily Stack Zones", group=groupWeeklyStackZones)
-clShowUpperWeeklyDailyStackZone          = input.bool(true, "Show Upper Weekly / Daily Stack Zone", group=groupWeeklyStackZones, inline="wd1")
-clShowLowerWeeklyDailyStackZone          = input.bool(true, "Show Lower Weekly / Daily Stack Zone", group=groupWeeklyStackZones, inline="wd1")
-clUpperWeeklyDailyStackFillColor         = input.color(color.new(#7b61ff, 0), "Upper Weekly / Daily Stack Zone fill color", group=groupWeeklyStackZones, inline="wd2")
-clLowerWeeklyDailyStackFillColor         = input.color(color.new(#00a6a6, 0), "Lower Weekly / Daily Stack Zone fill color", group=groupWeeklyStackZones, inline="wd2")
-clWeeklyDailyStackFillTransparency       = input.int(90, "Weekly / Daily Stack Zone fill transparency", minval=0, maxval=100, group=groupWeeklyStackZones)
-clWeeklyDailyStackBorderColor            = input.color(color.new(color.white, 0), "Weekly / Daily Stack Zone border color", group=groupWeeklyStackZones, inline="wd3")
-clWeeklyDailyStackBorderTransparency     = input.int(88, "Weekly / Daily Stack Zone border transparency", minval=0, maxval=100, group=groupWeeklyStackZones, inline="wd3")
-clWeeklyDailyStackBorderWidth            = input.int(1, "Weekly / Daily Stack Zone border width", minval=0, maxval=5, group=groupWeeklyStackZones)
-clShowWeeklyDailyStackLabels             = input.bool(false, "Show Weekly / Daily Stack Zone labels", group=groupWeeklyStackZones, inline="wd4")
-clWeeklyDailyStackLabelTextColor         = input.color(color.new(color.white, 0), "Weekly / Daily Stack Zone label text color", group=groupWeeklyStackZones, inline="wd4")
-clWeeklyDailyStackLabelSizeInput         = input.string("Small", "Weekly / Daily Stack Zone label size", options=["Tiny", "Small", "Normal", "Large"], group=groupWeeklyStackZones)
-clExtendWeeklyDailyStackZonesRight       = input.bool(true, "Extend Weekly / Daily Stack Zones Right", group=groupWeeklyStackZones)
+clBreakoutZoneDisplayMode = input.string("Anchored breakout zones", "Breakout Zone Display Mode", options=["Anchored breakout zones", "Fitted breakout zones", "Floating breakout zones"], group=groupBreakoutZones)
+clExtendBreakoutZonesRight = input.bool(true, "Extend anchored zones right", group=groupBreakoutZones, tooltip="Only affects anchored breakout zones.")
 
-clShowMonthlyDailyStackZones              = input.bool(false, "Show Monthly / Daily Stack Zones", group=groupMonthlyStackZones)
-clShowUpperMonthlyDailyStackZone          = input.bool(true, "Show Upper Monthly / Daily Stack Zone", group=groupMonthlyStackZones, inline="md1")
-clShowLowerMonthlyDailyStackZone          = input.bool(true, "Show Lower Monthly / Daily Stack Zone", group=groupMonthlyStackZones, inline="md1")
-clUpperMonthlyDailyStackFillColor         = input.color(color.new(#d45a8c, 0), "Upper Monthly / Daily Stack Zone fill color", group=groupMonthlyStackZones, inline="md2")
-clLowerMonthlyDailyStackFillColor         = input.color(color.new(#2d9cdb, 0), "Lower Monthly / Daily Stack Zone fill color", group=groupMonthlyStackZones, inline="md2")
-clMonthlyDailyStackFillTransparency       = input.int(92, "Monthly / Daily Stack Zone fill transparency", minval=0, maxval=100, group=groupMonthlyStackZones)
-clMonthlyDailyStackBorderColor            = input.color(color.new(color.white, 0), "Monthly / Daily Stack Zone border color", group=groupMonthlyStackZones, inline="md3")
-clMonthlyDailyStackBorderTransparency     = input.int(90, "Monthly / Daily Stack Zone border transparency", minval=0, maxval=100, group=groupMonthlyStackZones, inline="md3")
-clMonthlyDailyStackBorderWidth            = input.int(1, "Monthly / Daily Stack Zone border width", minval=0, maxval=5, group=groupMonthlyStackZones)
-clShowMonthlyDailyStackLabels             = input.bool(false, "Show Monthly / Daily Stack Zone labels", group=groupMonthlyStackZones, inline="md4")
-clMonthlyDailyStackLabelTextColor         = input.color(color.new(color.white, 0), "Monthly / Daily Stack Zone label text color", group=groupMonthlyStackZones, inline="md4")
-clMonthlyDailyStackLabelSizeInput         = input.string("Small", "Monthly / Daily Stack Zone label size", options=["Tiny", "Small", "Normal", "Large"], group=groupMonthlyStackZones)
-clExtendMonthlyDailyStackZonesRight       = input.bool(true, "Extend Monthly / Daily Stack Zones Right", group=groupMonthlyStackZones)
+clShowHourlyBreakoutZone = input.bool(true, "Show Hourly Breakout Zone", group=groupBreakoutZones)
+clShowFourHourBreakoutZone = input.bool(true, "Show Four Hour Breakout Zone", group=groupBreakoutZones)
+clShowDailyBreakoutZone = input.bool(true, "Show Daily Breakout Zone", group=groupBreakoutZones)
+clShowWeeklyBreakoutZone = input.bool(false, "Show Weekly Breakout Zone", group=groupBreakoutZones)
+clShowMonthlyBreakoutZone = input.bool(false, "Show Monthly Breakout Zone", group=groupBreakoutZones)
 
-clShowH1SweepGaps             = input.bool(true, "Show H1 Sweep Gap Zones", group=groupH1GapZones)
-clShowUpperH1SweepGap         = input.bool(true, "Show Upper H1 Sweep Gap", group=groupH1GapZones, inline="h1g1")
-clShowLowerH1SweepGap         = input.bool(true, "Show Lower H1 Sweep Gap", group=groupH1GapZones, inline="h1g1")
-clUpperH1GapFillColor         = input.color(color.new(#2f80ed, 0), "Upper H1 Sweep Gap fill color", group=groupH1GapZones, inline="h1g2")
-clLowerH1GapFillColor         = input.color(color.new(#c77d28, 0), "Lower H1 Sweep Gap fill color", group=groupH1GapZones, inline="h1g2")
-clH1GapFillTransparency       = input.int(90, "H1 Sweep Gap fill transparency / opacity", minval=0, maxval=100, group=groupH1GapZones)
-clH1GapBorderColor            = input.color(color.new(color.white, 0), "H1 Sweep Gap border color", group=groupH1GapZones, inline="h1g3")
-clH1GapBorderTransparency     = input.int(88, "H1 Sweep Gap border transparency / opacity", minval=0, maxval=100, group=groupH1GapZones, inline="h1g3")
-clH1GapBorderWidth            = input.int(1, "H1 Sweep Gap border width", minval=0, maxval=5, group=groupH1GapZones)
-clShowH1GapLabels             = input.bool(false, "Show H1 Sweep Gap labels", group=groupH1GapZones, inline="h1g4")
-clH1GapLabelTextColor         = input.color(color.new(color.white, 0), "H1 Sweep Gap label text color", group=groupH1GapZones, inline="h1g4")
-clH1GapLabelSizeInput         = input.string("Small", "H1 Sweep Gap label size", options=["Tiny", "Small", "Normal", "Large"], group=groupH1GapZones)
-clExtendH1GapsRight           = input.bool(true, "Extend H1 Sweep Gaps Right", group=groupH1GapZones)
+clFittedBreakoutExtendRight = input.bool(true, "Fitted breakout right extension", group=groupBreakoutZones)
+clFittedBreakoutExtensionBars = input.int(75, "Fitted breakout extension bars", minval=0, maxval=500, group=groupBreakoutZones)
 
-//=================================================================================================================
-// SECTION 1.30 – HTF DISTANCE TABLE INPUTS
-//=================================================================================================================
-clShowHtfDistanceTable              = input.bool(true, "Show HTF Distance Table", group=groupHtfDistanceTable)
-clHtfDistanceTablePositionInput     = input.string("Top Center", "HTF Distance Table Position", options=["Top Center", "Top Right", "Top Left", "Middle Right", "Bottom Right"], group=groupHtfDistanceTable)
-clHtfDistanceTableTextSizeInput     = input.string("Small", "HTF Distance Table Text Size", options=["Tiny", "Small", "Normal", "Large"], group=groupHtfDistanceTable)
-clHtfDistanceTableTextColor         = input.color(color.new(color.white, 0), "HTF Distance Table Text Color", group=groupHtfDistanceTable, inline="htf1")
-clHtfDistanceTableHeaderTextColor   = input.color(color.new(#f2d16b, 0), "HTF Distance Table Header Text Color", group=groupHtfDistanceTable, inline="htf1")
-clHtfDistanceTableBackgroundColor   = input.color(color.new(color.black, 0), "HTF Distance Table Background Color", group=groupHtfDistanceTable, inline="htf2")
-clHtfDistanceTableBorderColor       = input.color(color.new(color.white, 55), "HTF Distance Table Border Color", group=groupHtfDistanceTable, inline="htf2")
-clHtfDistanceTableBorderWidth       = input.int(1, "HTF Distance Table Border Width", minval=0, maxval=5, group=groupHtfDistanceTable)
-clHtfDistanceTableTransparency      = input.int(82, "HTF Distance Table Transparency", minval=0, maxval=100, group=groupHtfDistanceTable)
-clHtfDistanceTableLevelSource       = input.string("Current Developing Period", "HTF Distance Table Level Source", options=["Current Developing Period", "Previous Completed Period"], group=groupHtfDistanceTable)
-clHtfDistanceShowSigned             = input.bool(false, "Show Signed Distances", group=groupHtfDistanceTable)
+clFloatingWindowBarsBack = input.int(5, "Floating breakout bars back", minval=0, group=groupBreakoutZones)
+clFloatingWindowBarsForward = input.int(75, "Floating breakout bars forward", minval=1, group=groupBreakoutZones)
 
-//=================================================================================================================
-// SECTION 1.35 – ZONE ALERT INPUTS
-//=================================================================================================================
-clEnableZoneAlerts            = input.bool(false, "Enable Zone Alerts", group=groupZoneAlerts)
-clEnableStackZoneAlerts       = input.bool(false, "Enable Daily / 4H Stack Zone Alerts", group=groupZoneAlerts)
-clEnableWeeklyDailyStackZoneAlerts = input.bool(false, "Enable Weekly / Daily Stack Zone Alerts", group=groupZoneAlerts)
-clEnableMonthlyDailyStackZoneAlerts = input.bool(false, "Enable Monthly / Daily Stack Zone Alerts", group=groupZoneAlerts)
-clEnableH1SweepGapAlerts      = input.bool(false, "Enable H1 Sweep Gap Alerts", group=groupZoneAlerts)
+clUpperBreakoutFillColor = input.color(color.new(color.green, 0), "Upper Breakout Color", group=groupBreakoutZones)
+clLowerBreakoutFillColor = input.color(color.new(color.red, 0), "Lower Breakout Color", group=groupBreakoutZones)
+clBreakoutFillTransparency = input.int(88, "Breakout Fill Transparency", minval=0, maxval=100, group=groupBreakoutZones)
+clBreakoutBorderColor = input.color(color.new(color.white, 0), "Breakout Border Color", group=groupBreakoutZones)
+clBreakoutBorderTransparency = input.int(85, "Breakout Border Transparency", minval=0, maxval=100, group=groupBreakoutZones)
+clBreakoutBorderWidth = input.int(1, "Breakout Border Width", minval=0, maxval=5, group=groupBreakoutZones)
 
-clAlertStackNear              = input.bool(false, "Alert when price is near Daily / 4H Stack Zone", group=groupZoneAlerts)
-clAlertStackEntered           = input.bool(false, "Alert when price enters Daily / 4H Stack Zone", group=groupZoneAlerts)
-clAlertStackCleared           = input.bool(false, "Alert when price clears Daily / 4H Stack Zone", group=groupZoneAlerts)
-clAlertWeeklyDailyStackNear   = input.bool(false, "Alert when price is near Weekly / Daily Stack Zone", group=groupZoneAlerts)
-clAlertWeeklyDailyStackEntered = input.bool(false, "Alert when price enters Weekly / Daily Stack Zone", group=groupZoneAlerts)
-clAlertWeeklyDailyStackCleared = input.bool(false, "Alert when price clears Weekly / Daily Stack Zone", group=groupZoneAlerts)
-clAlertMonthlyDailyStackNear  = input.bool(false, "Alert when price is near Monthly / Daily Stack Zone", group=groupZoneAlerts)
-clAlertMonthlyDailyStackEntered = input.bool(false, "Alert when price enters Monthly / Daily Stack Zone", group=groupZoneAlerts)
-clAlertMonthlyDailyStackCleared = input.bool(false, "Alert when price clears Monthly / Daily Stack Zone", group=groupZoneAlerts)
-clAlertH1GapNear              = input.bool(false, "Alert when price is near H1 Sweep Gap", group=groupZoneAlerts)
-clAlertH1GapEntered           = input.bool(false, "Alert when price enters H1 Sweep Gap", group=groupZoneAlerts)
-clAlertH1Swept                = input.bool(false, "Alert when price sweeps previous H1 high/low", group=groupZoneAlerts)
-
-clEnableDynamicZoneAlerts     = input.bool(false, "Enable Dynamic alert() messages", group=groupZoneAlerts)
-
-clNearMode                    = input.string("Fixed Points", "Near Mode", options=["Fixed Points", "Ticks", "ATR Multiple"], group=groupZoneAlerts)
-clNearDistancePoints          = input.float(10.0, "Near Distance Points", minval=0.0, step=0.25, group=groupZoneAlerts)
-clNearDistanceTicks           = input.int(40, "Near Distance Ticks", minval=1, group=groupZoneAlerts)
-clNearDistanceAtrMultiplier   = input.float(0.25, "Near Distance ATR Multiplier", minval=0.0, step=0.05, group=groupZoneAlerts)
-clZoneAtrLength               = input.int(14, "ATR Length for zone proximity", minval=1, group=groupZoneAlerts)
-clZoneAlertTriggerBasis       = input.string("Wick Touch", "Zone Alert Trigger Basis", options=["Wick Touch", "Close"], group=groupZoneAlerts)
+clShowBreakoutLabels = input.bool(false, "Show breakout labels", group=groupBreakoutZones)
+clBreakoutLabelTextColor = input.color(color.new(color.white, 0), "Breakout label text color", group=groupBreakoutZones)
+clBreakoutLabelSizeInput = input.string("Small", "Breakout label size", options=["Tiny", "Small", "Normal", "Large"], group=groupBreakoutZones)
+clShowBreakoutAnchorMarkers = input.bool(false, "Show breakout anchor markers", group=groupBreakoutZones, tooltip="Optional quiet markers for referenced high/low anchor bars.")
+clShowPointsTillBreakLabels = input.bool(true, "Show points-to-break labels", group=groupBreakoutZones)
+clPointsTillBreakOffsetBars = input.int(10, "Points label offset bars", minval=0, group=groupBreakoutZones)
+clPointsTillBreakLabelTextColor = input.color(color.new(color.white, 0), "Points label text color", group=groupBreakoutZones)
+clPointsTillBreakLabelSizeInput = input.string("Small", "Points label size", options=["Tiny", "Small", "Normal", "Large"], group=groupBreakoutZones)
 
 //=================================================================================================================
 // SECTION 1.5 – FUTURES VALUE PANEL INPUTS
@@ -296,12 +218,6 @@ f_panel_position(_location) =>
      _location == "Top Right" ? position.top_right :
      _location == "Bottom Left" ? position.bottom_left : position.bottom_right
 
-f_htf_distance_table_position(_location) =>
-    _location == "Top Center" ? position.top_center :
-     _location == "Top Right" ? position.top_right :
-     _location == "Top Left" ? position.top_left :
-     _location == "Middle Right" ? position.middle_right : position.bottom_right
-
 f_panel_text_size(_size) =>
     _size == "Tiny" ? size.tiny :
      _size == "Normal" ? size.normal :
@@ -324,26 +240,6 @@ f_points_text(_v) =>
 
 f_normalize_token(_s) =>
     str.upper(str.replace_all(_s, " ", ""))
-
-f_zone_near(_price, _top, _bottom, _distance) =>
-    zoneTop = math.max(_top, _bottom)
-    zoneBottom = math.min(_top, _bottom)
-    ready = not na(_price) and not na(zoneTop) and not na(zoneBottom) and not na(_distance)
-    inside = ready and _price <= zoneTop and _price >= zoneBottom
-    edgeDistance = ready ? (_price > zoneTop ? _price - zoneTop : _price < zoneBottom ? zoneBottom - _price : 0.0) : na
-    ready and not inside and edgeDistance > 0 and edgeDistance <= _distance
-
-f_zone_entered(_top, _bottom, _basis) =>
-    zoneTop = math.max(_top, _bottom)
-    zoneBottom = math.min(_top, _bottom)
-    ready = not na(zoneTop) and not na(zoneBottom)
-    ready and (_basis == "Wick Touch" ? (high >= zoneBottom and low <= zoneTop) : (close <= zoneTop and close >= zoneBottom))
-
-f_zone_clear_above(_top, _basis) =>
-    not na(_top) and (_basis == "Wick Touch" ? high >= _top : close > _top)
-
-f_zone_clear_below(_bottom, _basis) =>
-    not na(_bottom) and (_basis == "Wick Touch" ? low <= _bottom : close < _bottom)
 
 f_update_zone_box(_box, _left, _right, _top, _bottom, _bgColor, _borderColor, _borderWidth, _extendRight) =>
     box result = _box
@@ -481,14 +377,6 @@ f_update_anchor_label(_label, _x, _y, _text, _textColor, _style) =>
         label.set_color(result, color.new(color.black, 88))
         label.set_size(result, size.tiny)
     result
-
-f_htf_distance_text(_level, _isHigh, _signed) =>
-    if na(_level) or na(close)
-        "—"
-    else
-        rawDistance = _signed ? (_isHigh ? _level - close : close - _level) : math.abs(_level - close)
-        roundedDistance = int(math.round(rawDistance))
-        _signed and roundedDistance > 0 ? "+" + str.tostring(roundedDistance) : str.tostring(roundedDistance)
 
 baseOff = syminfo.mintick * LabelBaseOffsetTicks
 gapOff  = syminfo.mintick * LabelSpacingTicks
@@ -828,7 +716,7 @@ else
         dLblOCLive := na
 
 //=================================================================================================================
-// SECTION 6.5 – DAILY / 4H, WEEKLY / DAILY, MONTHLY / DAILY STACK ZONES, H1 SWEEP GAP ZONES, AND HTF TABLE
+// SECTION 6.5 – BREAKOUT ZONE STATE AND RENDERING
 //=================================================================================================================
 var float clCurDayHigh = na
 var float clCurDayLow = na
@@ -961,6 +849,7 @@ var float clCur4HHigh = na
 var float clCur4HLow = na
 var int clCur4HHighTime = na
 var int clCur4HLowTime = na
+var int clCur4HStartTime = na
 var float clLatestClosed4HHigh = na
 var float clLatestClosed4HLow = na
 var int clLatestClosed4HHighTime = na
@@ -971,6 +860,7 @@ if na(clCur4HHigh)
     clCur4HLow := low
     clCur4HHighTime := time
     clCur4HLowTime := time
+    clCur4HStartTime := time
 else if isNewFourHour
     clLatestClosed4HHigh := clCur4HHigh
     clLatestClosed4HLow := clCur4HLow
@@ -980,6 +870,7 @@ else if isNewFourHour
     clCur4HLow := low
     clCur4HHighTime := time
     clCur4HLowTime := time
+    clCur4HStartTime := time
 else
     if high > clCur4HHigh
         clCur4HHigh := high
@@ -995,6 +886,7 @@ clCurrentHourLow = request.security(syminfo.tickerid, "60", low, gaps=barmerge.g
 clCurrentHourStartTime = request.security(syminfo.tickerid, "60", time, gaps=barmerge.gaps_off, lookahead=barmerge.lookahead_off)
 
 clShowZonesAllowed = timeframe.isintraday
+clBreakoutRenderAllowed = clShowZonesAllowed and clShowBreakoutZones
 clBarMs = int(timeframe.in_seconds(timeframe.period) * 1000)
 clZoneRightTime = time + clBarMs
 
@@ -1016,8 +908,8 @@ upperStackRightTime = clUpperStackDataReady ? math.max(clPreviousDayHighTime, cl
 lowerStackLeftTime = clLowerStackDataReady ? math.min(clPreviousDayLowTime, clLatestClosed4HLowTime) : na
 lowerStackRightTime = clLowerStackDataReady ? math.max(clPreviousDayLowTime, clLatestClosed4HLowTime) : na
 
-upperStackActive = clShowZonesAllowed and clShowStackZones and clShowUpperStackZone and clUpperStackDataReady and not clPrevDayHighTakenToday and clLatestClosed4HHigh < clPreviousDayHigh
-lowerStackActive = clShowZonesAllowed and clShowStackZones and clShowLowerStackZone and clLowerStackDataReady and not clPrevDayLowTakenToday and clLatestClosed4HLow > clPreviousDayLow
+upperStackActive = clBreakoutRenderAllowed and clShowDailyBreakoutZone and clUpperStackDataReady and not clPrevDayHighTakenToday and clLatestClosed4HHigh < clPreviousDayHigh
+lowerStackActive = clBreakoutRenderAllowed and clShowDailyBreakoutZone and clLowerStackDataReady and not clPrevDayLowTakenToday and clLatestClosed4HLow > clPreviousDayLow
 
 weeklyUpperStackDataReady = not na(clPreviousWeekHigh) and not na(clPreviousWeekHighTime) and not na(clLatestClosedDailyHigh) and not na(clLatestClosedDailyHighTime)
 weeklyLowerStackDataReady = not na(clPreviousWeekLow) and not na(clPreviousWeekLowTime) and not na(clLatestClosedDailyLow) and not na(clLatestClosedDailyLowTime)
@@ -1032,8 +924,8 @@ weeklyUpperRightTime = weeklyUpperStackDataReady ? math.max(clPreviousWeekHighTi
 weeklyLowerLeftTime = weeklyLowerStackDataReady ? math.min(clPreviousWeekLowTime, clLatestClosedDailyLowTime) : na
 weeklyLowerRightTime = weeklyLowerStackDataReady ? math.max(clPreviousWeekLowTime, clLatestClosedDailyLowTime) : na
 
-weeklyUpperStackActive = clShowZonesAllowed and clShowWeeklyDailyStackZones and clShowUpperWeeklyDailyStackZone and weeklyUpperStackDataReady and not clPrevWeekHighTakenThisWeek and clLatestClosedDailyHigh < clPreviousWeekHigh
-weeklyLowerStackActive = clShowZonesAllowed and clShowWeeklyDailyStackZones and clShowLowerWeeklyDailyStackZone and weeklyLowerStackDataReady and not clPrevWeekLowTakenThisWeek and clLatestClosedDailyLow > clPreviousWeekLow
+weeklyUpperStackActive = clBreakoutRenderAllowed and clShowWeeklyBreakoutZone and weeklyUpperStackDataReady and not clPrevWeekHighTakenThisWeek and clLatestClosedDailyHigh < clPreviousWeekHigh
+weeklyLowerStackActive = clBreakoutRenderAllowed and clShowWeeklyBreakoutZone and weeklyLowerStackDataReady and not clPrevWeekLowTakenThisWeek and clLatestClosedDailyLow > clPreviousWeekLow
 
 monthlyUpperStackDataReady = not na(clPreviousMonthHigh) and not na(clPreviousMonthHighTime) and not na(clLatestClosedDailyHigh) and not na(clLatestClosedDailyHighTime)
 monthlyLowerStackDataReady = not na(clPreviousMonthLow) and not na(clPreviousMonthLowTime) and not na(clLatestClosedDailyLow) and not na(clLatestClosedDailyLowTime)
@@ -1048,8 +940,8 @@ monthlyUpperRightTime = monthlyUpperStackDataReady ? math.max(clPreviousMonthHig
 monthlyLowerLeftTime = monthlyLowerStackDataReady ? math.min(clPreviousMonthLowTime, clLatestClosedDailyLowTime) : na
 monthlyLowerRightTime = monthlyLowerStackDataReady ? math.max(clPreviousMonthLowTime, clLatestClosedDailyLowTime) : na
 
-monthlyUpperStackActive = clShowZonesAllowed and clShowMonthlyDailyStackZones and clShowUpperMonthlyDailyStackZone and monthlyUpperStackDataReady and not clPrevMonthHighTakenThisMonth and clLatestClosedDailyHigh < clPreviousMonthHigh
-monthlyLowerStackActive = clShowZonesAllowed and clShowMonthlyDailyStackZones and clShowLowerMonthlyDailyStackZone and monthlyLowerStackDataReady and not clPrevMonthLowTakenThisMonth and clLatestClosedDailyLow > clPreviousMonthLow
+monthlyUpperStackActive = clBreakoutRenderAllowed and clShowMonthlyBreakoutZone and monthlyUpperStackDataReady and not clPrevMonthHighTakenThisMonth and clLatestClosedDailyHigh < clPreviousMonthHigh
+monthlyLowerStackActive = clBreakoutRenderAllowed and clShowMonthlyBreakoutZone and monthlyLowerStackDataReady and not clPrevMonthLowTakenThisMonth and clLatestClosedDailyLow > clPreviousMonthLow
 
 h1UpperGapActive = not na(clCurrentHourHigh) and not na(clPreviousHourHigh) and clCurrentHourHigh < clPreviousHourHigh
 h1UpperGapTop = clPreviousHourHigh
@@ -1059,14 +951,24 @@ h1LowerGapActive = not na(clCurrentHourLow) and not na(clPreviousHourLow) and cl
 h1LowerGapTop = clCurrentHourLow
 h1LowerGapBottom = clPreviousHourLow
 
-clUpperH1GapVisible = clShowZonesAllowed and clShowH1SweepGaps and clShowUpperH1SweepGap and h1UpperGapActive
-clLowerH1GapVisible = clShowZonesAllowed and clShowH1SweepGaps and clShowLowerH1SweepGap and h1LowerGapActive
+clUpperH1GapVisible = clBreakoutRenderAllowed and clShowHourlyBreakoutZone and h1UpperGapActive
+clLowerH1GapVisible = clBreakoutRenderAllowed and clShowHourlyBreakoutZone and h1LowerGapActive
 clH1GapLeftTime = nz(clCurrentHourStartTime, time)
+
+fourHourUpperBreakoutDataReady = not na(clLatestClosed4HHigh) and not na(clCur4HHigh) and not na(clCur4HStartTime)
+fourHourLowerBreakoutDataReady = not na(clLatestClosed4HLow) and not na(clCur4HLow) and not na(clCur4HStartTime)
+fourHourUpperBreakoutTop = clLatestClosed4HHigh
+fourHourUpperBreakoutBottom = clCur4HHigh
+fourHourLowerBreakoutTop = clCur4HLow
+fourHourLowerBreakoutBottom = clLatestClosed4HLow
+clFourHourBreakoutLeftTime = nz(clCur4HStartTime, time)
+clUpperFourHourBreakoutVisible = clBreakoutRenderAllowed and clShowFourHourBreakoutZone and fourHourUpperBreakoutDataReady and clCur4HHigh < clLatestClosed4HHigh
+clLowerFourHourBreakoutVisible = clBreakoutRenderAllowed and clShowFourHourBreakoutZone and fourHourLowerBreakoutDataReady and clCur4HLow > clLatestClosed4HLow
 
 clBreakoutZoneAnchoredMode = clBreakoutZoneDisplayMode == "Anchored breakout zones"
 clBreakoutZoneFittedMode = clBreakoutZoneDisplayMode == "Fitted breakout zones"
 clBreakoutZoneFloatingMode = clBreakoutZoneDisplayMode == "Floating breakout zones"
-clMaxFittedBreakoutSegments = 40
+clMaxFittedBreakoutSegments = 32
 
 upperStackLeftBarIndex = ta.valuewhen(clUpperStackDataReady and time <= upperStackLeftTime and time + clBarMs > upperStackLeftTime, bar_index, 0)
 upperStackRightBarIndex = ta.valuewhen(clUpperStackDataReady and time <= upperStackRightTime and time + clBarMs > upperStackRightTime, bar_index, 0)
@@ -1080,6 +982,7 @@ monthlyUpperLeftBarIndex = ta.valuewhen(monthlyUpperStackDataReady and time <= m
 monthlyUpperRightBarIndex = ta.valuewhen(monthlyUpperStackDataReady and time <= monthlyUpperRightTime and time + clBarMs > monthlyUpperRightTime, bar_index, 0)
 monthlyLowerLeftBarIndex = ta.valuewhen(monthlyLowerStackDataReady and time <= monthlyLowerLeftTime and time + clBarMs > monthlyLowerLeftTime, bar_index, 0)
 monthlyLowerRightBarIndex = ta.valuewhen(monthlyLowerStackDataReady and time <= monthlyLowerRightTime and time + clBarMs > monthlyLowerRightTime, bar_index, 0)
+fourHourBreakoutLeftBarIndex = ta.valuewhen(time <= clFourHourBreakoutLeftTime and time + clBarMs > clFourHourBreakoutLeftTime, bar_index, 0)
 h1GapLeftBarIndex = ta.valuewhen(time <= clH1GapLeftTime and time + clBarMs > clH1GapLeftTime, bar_index, 0)
 
 var box clUpperStackBox = na
@@ -1090,6 +993,8 @@ var box clMonthlyUpperStackBox = na
 var box clMonthlyLowerStackBox = na
 var box clUpperH1GapBox = na
 var box clLowerH1GapBox = na
+var box clUpperFourHourBreakoutBox = na
+var box clLowerFourHourBreakoutBox = na
 
 var box[] clUpperStackFillBoxes = array.new_box()
 var box[] clLowerStackFillBoxes = array.new_box()
@@ -1099,6 +1004,8 @@ var box[] clMonthlyUpperStackFillBoxes = array.new_box()
 var box[] clMonthlyLowerStackFillBoxes = array.new_box()
 var box[] clUpperH1GapFillBoxes = array.new_box()
 var box[] clLowerH1GapFillBoxes = array.new_box()
+var box[] clUpperFourHourBreakoutFillBoxes = array.new_box()
+var box[] clLowerFourHourBreakoutFillBoxes = array.new_box()
 
 var box clUpperStackFittedExtensionBox = na
 var box clLowerStackFittedExtensionBox = na
@@ -1108,6 +1015,8 @@ var box clMonthlyUpperStackFittedExtensionBox = na
 var box clMonthlyLowerStackFittedExtensionBox = na
 var box clUpperH1GapFittedExtensionBox = na
 var box clLowerH1GapFittedExtensionBox = na
+var box clUpperFourHourBreakoutFittedExtensionBox = na
+var box clLowerFourHourBreakoutFittedExtensionBox = na
 
 var label clUpperStackLabel = na
 var label clLowerStackLabel = na
@@ -1117,6 +1026,8 @@ var label clMonthlyUpperStackLabel = na
 var label clMonthlyLowerStackLabel = na
 var label clUpperH1GapLabel = na
 var label clLowerH1GapLabel = na
+var label clUpperFourHourBreakoutLabel = na
+var label clLowerFourHourBreakoutLabel = na
 var label clUpperStackPointsLabel = na
 var label clLowerStackPointsLabel = na
 var label clWeeklyUpperStackPointsLabel = na
@@ -1125,26 +1036,50 @@ var label clMonthlyUpperStackPointsLabel = na
 var label clMonthlyLowerStackPointsLabel = na
 var label clUpperH1GapPointsLabel = na
 var label clLowerH1GapPointsLabel = na
+var label clUpperFourHourBreakoutPointsLabel = na
+var label clLowerFourHourBreakoutPointsLabel = na
 
 var label clPrevDayHighAnchorLabel = na
 var label clPrevDayLowAnchorLabel = na
 var label clClosed4HHighAnchorLabel = na
 var label clClosed4HLowAnchorLabel = na
 
-var table clHtfDistanceTable = table.new(position.top_center, 3, 6, bgcolor=color.new(color.black, 100), frame_color=color.new(color.black, 100), frame_width=0, border_color=color.new(color.black, 100), border_width=0)
-
-clStackUpperBg = color.new(clUpperStackFillColor, clStackFillTransparency)
-clStackLowerBg = color.new(clLowerStackFillColor, clStackFillTransparency)
-clStackBorder = color.new(clStackBorderColor, clStackBorderTransparency)
-clWeeklyStackUpperBg = color.new(clUpperWeeklyDailyStackFillColor, clWeeklyDailyStackFillTransparency)
-clWeeklyStackLowerBg = color.new(clLowerWeeklyDailyStackFillColor, clWeeklyDailyStackFillTransparency)
-clWeeklyStackBorder = color.new(clWeeklyDailyStackBorderColor, clWeeklyDailyStackBorderTransparency)
-clMonthlyStackUpperBg = color.new(clUpperMonthlyDailyStackFillColor, clMonthlyDailyStackFillTransparency)
-clMonthlyStackLowerBg = color.new(clLowerMonthlyDailyStackFillColor, clMonthlyDailyStackFillTransparency)
-clMonthlyStackBorder = color.new(clMonthlyDailyStackBorderColor, clMonthlyDailyStackBorderTransparency)
-clH1UpperBg = color.new(clUpperH1GapFillColor, clH1GapFillTransparency)
-clH1LowerBg = color.new(clLowerH1GapFillColor, clH1GapFillTransparency)
-clH1Border = color.new(clH1GapBorderColor, clH1GapBorderTransparency)
+clUpperBreakoutBg = color.new(clUpperBreakoutFillColor, clBreakoutFillTransparency)
+clLowerBreakoutBg = color.new(clLowerBreakoutFillColor, clBreakoutFillTransparency)
+clBreakoutBorder = color.new(clBreakoutBorderColor, clBreakoutBorderTransparency)
+clStackUpperBg = clUpperBreakoutBg
+clStackLowerBg = clLowerBreakoutBg
+clStackBorder = clBreakoutBorder
+clWeeklyStackUpperBg = clUpperBreakoutBg
+clWeeklyStackLowerBg = clLowerBreakoutBg
+clWeeklyStackBorder = clBreakoutBorder
+clMonthlyStackUpperBg = clUpperBreakoutBg
+clMonthlyStackLowerBg = clLowerBreakoutBg
+clMonthlyStackBorder = clBreakoutBorder
+clH1UpperBg = clUpperBreakoutBg
+clH1LowerBg = clLowerBreakoutBg
+clH1Border = clBreakoutBorder
+clStackBorderWidth = clBreakoutBorderWidth
+clWeeklyDailyStackBorderWidth = clBreakoutBorderWidth
+clMonthlyDailyStackBorderWidth = clBreakoutBorderWidth
+clH1GapBorderWidth = clBreakoutBorderWidth
+clShowStackLabels = clShowBreakoutLabels
+clShowWeeklyDailyStackLabels = clShowBreakoutLabels
+clShowMonthlyDailyStackLabels = clShowBreakoutLabels
+clShowH1GapLabels = clShowBreakoutLabels
+clStackLabelTextColor = clBreakoutLabelTextColor
+clWeeklyDailyStackLabelTextColor = clBreakoutLabelTextColor
+clMonthlyDailyStackLabelTextColor = clBreakoutLabelTextColor
+clH1GapLabelTextColor = clBreakoutLabelTextColor
+clStackLabelSizeInput = clBreakoutLabelSizeInput
+clWeeklyDailyStackLabelSizeInput = clBreakoutLabelSizeInput
+clMonthlyDailyStackLabelSizeInput = clBreakoutLabelSizeInput
+clH1GapLabelSizeInput = clBreakoutLabelSizeInput
+clShowStackAnchorMarkers = clShowBreakoutAnchorMarkers
+clExtendStackZonesRight = clExtendBreakoutZonesRight
+clExtendWeeklyDailyStackZonesRight = clExtendBreakoutZonesRight
+clExtendMonthlyDailyStackZonesRight = clExtendBreakoutZonesRight
+clExtendH1GapsRight = clExtendBreakoutZonesRight
 
 var string clLastBreakoutZoneDisplayMode = clBreakoutZoneDisplayMode
 if clBreakoutZoneDisplayMode != clLastBreakoutZoneDisplayMode
@@ -1172,6 +1107,12 @@ if clBreakoutZoneDisplayMode != clLastBreakoutZoneDisplayMode
     if not na(clLowerH1GapBox)
         box.delete(clLowerH1GapBox)
         clLowerH1GapBox := na
+    if not na(clUpperFourHourBreakoutBox)
+        box.delete(clUpperFourHourBreakoutBox)
+        clUpperFourHourBreakoutBox := na
+    if not na(clLowerFourHourBreakoutBox)
+        box.delete(clLowerFourHourBreakoutBox)
+        clLowerFourHourBreakoutBox := na
     f_clear_zone_fill_boxes(clUpperStackFillBoxes)
     f_clear_zone_fill_boxes(clLowerStackFillBoxes)
     f_clear_zone_fill_boxes(clWeeklyUpperStackFillBoxes)
@@ -1180,6 +1121,8 @@ if clBreakoutZoneDisplayMode != clLastBreakoutZoneDisplayMode
     f_clear_zone_fill_boxes(clMonthlyLowerStackFillBoxes)
     f_clear_zone_fill_boxes(clUpperH1GapFillBoxes)
     f_clear_zone_fill_boxes(clLowerH1GapFillBoxes)
+    f_clear_zone_fill_boxes(clUpperFourHourBreakoutFillBoxes)
+    f_clear_zone_fill_boxes(clLowerFourHourBreakoutFillBoxes)
     if not na(clUpperStackFittedExtensionBox)
         box.delete(clUpperStackFittedExtensionBox)
         clUpperStackFittedExtensionBox := na
@@ -1204,6 +1147,12 @@ if clBreakoutZoneDisplayMode != clLastBreakoutZoneDisplayMode
     if not na(clLowerH1GapFittedExtensionBox)
         box.delete(clLowerH1GapFittedExtensionBox)
         clLowerH1GapFittedExtensionBox := na
+    if not na(clUpperFourHourBreakoutFittedExtensionBox)
+        box.delete(clUpperFourHourBreakoutFittedExtensionBox)
+        clUpperFourHourBreakoutFittedExtensionBox := na
+    if not na(clLowerFourHourBreakoutFittedExtensionBox)
+        box.delete(clLowerFourHourBreakoutFittedExtensionBox)
+        clLowerFourHourBreakoutFittedExtensionBox := na
     clLastBreakoutZoneDisplayMode := clBreakoutZoneDisplayMode
 
 upperStackFittedVisible = upperStackActive and clBreakoutZoneFittedMode and time >= upperStackLeftTime
@@ -1214,6 +1163,8 @@ monthlyUpperFittedVisible = monthlyUpperStackActive and clBreakoutZoneFittedMode
 monthlyLowerFittedVisible = monthlyLowerStackActive and clBreakoutZoneFittedMode and time >= monthlyLowerLeftTime
 h1UpperFittedVisible = clUpperH1GapVisible and clBreakoutZoneFittedMode and time >= clH1GapLeftTime
 h1LowerFittedVisible = clLowerH1GapVisible and clBreakoutZoneFittedMode and time >= clH1GapLeftTime
+fourHourUpperFittedVisible = clUpperFourHourBreakoutVisible and clBreakoutZoneFittedMode and time >= clFourHourBreakoutLeftTime
+fourHourLowerFittedVisible = clLowerFourHourBreakoutVisible and clBreakoutZoneFittedMode and time >= clFourHourBreakoutLeftTime
 
 clFittedBodyRightTime = time + clBarMs
 clFittedExtensionRightTime = clZoneRightTime + clBarMs * clFittedBreakoutExtensionBars
@@ -1227,6 +1178,8 @@ monthlyUpperFittedBottom = math.min(high, clPreviousMonthHigh)
 monthlyLowerFittedTop = math.max(low, clPreviousMonthLow)
 h1UpperFittedBottom = math.min(high, clPreviousHourHigh)
 h1LowerFittedTop = math.max(low, clPreviousHourLow)
+fourHourUpperFittedBottom = math.min(high, clLatestClosed4HHigh)
+fourHourLowerFittedTop = math.max(low, clLatestClosed4HLow)
 
 upperStackFittedReset = upperStackFittedVisible and (not nz(upperStackFittedVisible[1], false) or nz(ta.change(clPreviousDayHigh)) != 0 or nz(ta.change(upperStackLeftTime)) != 0)
 upperStackFittedNewSegment = upperStackFittedVisible and (upperStackFittedReset or barstate.isnew)
@@ -1244,6 +1197,10 @@ h1UpperFittedReset = h1UpperFittedVisible and (not nz(h1UpperFittedVisible[1], f
 h1UpperFittedNewSegment = h1UpperFittedVisible and (h1UpperFittedReset or barstate.isnew)
 h1LowerFittedReset = h1LowerFittedVisible and (not nz(h1LowerFittedVisible[1], false) or nz(ta.change(clPreviousHourLow)) != 0 or nz(ta.change(clH1GapLeftTime)) != 0)
 h1LowerFittedNewSegment = h1LowerFittedVisible and (h1LowerFittedReset or barstate.isnew)
+fourHourUpperFittedReset = fourHourUpperFittedVisible and (not nz(fourHourUpperFittedVisible[1], false) or nz(ta.change(clLatestClosed4HHigh)) != 0 or nz(ta.change(clFourHourBreakoutLeftTime)) != 0)
+fourHourUpperFittedNewSegment = fourHourUpperFittedVisible and (fourHourUpperFittedReset or barstate.isnew)
+fourHourLowerFittedReset = fourHourLowerFittedVisible and (not nz(fourHourLowerFittedVisible[1], false) or nz(ta.change(clLatestClosed4HLow)) != 0 or nz(ta.change(clFourHourBreakoutLeftTime)) != 0)
+fourHourLowerFittedNewSegment = fourHourLowerFittedVisible and (fourHourLowerFittedReset or barstate.isnew)
 
 f_update_fitted_zone_boxes(clUpperStackFillBoxes, upperStackFittedVisible, upperStackFittedReset, upperStackFittedNewSegment, time, clFittedBodyRightTime, clPreviousDayHigh, upperStackFittedBottom, clStackUpperBg, clMaxFittedBreakoutSegments)
 f_update_fitted_zone_boxes(clLowerStackFillBoxes, lowerStackFittedVisible, lowerStackFittedReset, lowerStackFittedNewSegment, time, clFittedBodyRightTime, lowerStackFittedTop, clPreviousDayLow, clStackLowerBg, clMaxFittedBreakoutSegments)
@@ -1253,6 +1210,8 @@ f_update_fitted_zone_boxes(clMonthlyUpperStackFillBoxes, monthlyUpperFittedVisib
 f_update_fitted_zone_boxes(clMonthlyLowerStackFillBoxes, monthlyLowerFittedVisible, monthlyLowerFittedReset, monthlyLowerFittedNewSegment, time, clFittedBodyRightTime, monthlyLowerFittedTop, clPreviousMonthLow, clMonthlyStackLowerBg, clMaxFittedBreakoutSegments)
 f_update_fitted_zone_boxes(clUpperH1GapFillBoxes, h1UpperFittedVisible, h1UpperFittedReset, h1UpperFittedNewSegment, time, clFittedBodyRightTime, clPreviousHourHigh, h1UpperFittedBottom, clH1UpperBg, clMaxFittedBreakoutSegments)
 f_update_fitted_zone_boxes(clLowerH1GapFillBoxes, h1LowerFittedVisible, h1LowerFittedReset, h1LowerFittedNewSegment, time, clFittedBodyRightTime, h1LowerFittedTop, clPreviousHourLow, clH1LowerBg, clMaxFittedBreakoutSegments)
+f_update_fitted_zone_boxes(clUpperFourHourBreakoutFillBoxes, fourHourUpperFittedVisible, fourHourUpperFittedReset, fourHourUpperFittedNewSegment, time, clFittedBodyRightTime, clLatestClosed4HHigh, fourHourUpperFittedBottom, clUpperBreakoutBg, clMaxFittedBreakoutSegments)
+f_update_fitted_zone_boxes(clLowerFourHourBreakoutFillBoxes, fourHourLowerFittedVisible, fourHourLowerFittedReset, fourHourLowerFittedNewSegment, time, clFittedBodyRightTime, fourHourLowerFittedTop, clLatestClosed4HLow, clLowerBreakoutBg, clMaxFittedBreakoutSegments)
 
 clUpperStackFittedExtensionBox := f_update_fitted_breakout_extension_box(clUpperStackFittedExtensionBox, upperStackFittedVisible and clFittedExtensionVisible, clZoneRightTime, clFittedExtensionRightTime, clPreviousDayHigh, upperStackFittedBottom, true, clStackUpperBg)
 clLowerStackFittedExtensionBox := f_update_fitted_breakout_extension_box(clLowerStackFittedExtensionBox, lowerStackFittedVisible and clFittedExtensionVisible, clZoneRightTime, clFittedExtensionRightTime, clPreviousDayLow, lowerStackFittedTop, false, clStackLowerBg)
@@ -1262,6 +1221,8 @@ clMonthlyUpperStackFittedExtensionBox := f_update_fitted_breakout_extension_box(
 clMonthlyLowerStackFittedExtensionBox := f_update_fitted_breakout_extension_box(clMonthlyLowerStackFittedExtensionBox, monthlyLowerFittedVisible and clFittedExtensionVisible, clZoneRightTime, clFittedExtensionRightTime, clPreviousMonthLow, monthlyLowerFittedTop, false, clMonthlyStackLowerBg)
 clUpperH1GapFittedExtensionBox := f_update_fitted_breakout_extension_box(clUpperH1GapFittedExtensionBox, h1UpperFittedVisible and clFittedExtensionVisible, clZoneRightTime, clFittedExtensionRightTime, clPreviousHourHigh, h1UpperFittedBottom, true, clH1UpperBg)
 clLowerH1GapFittedExtensionBox := f_update_fitted_breakout_extension_box(clLowerH1GapFittedExtensionBox, h1LowerFittedVisible and clFittedExtensionVisible, clZoneRightTime, clFittedExtensionRightTime, clPreviousHourLow, h1LowerFittedTop, false, clH1LowerBg)
+clUpperFourHourBreakoutFittedExtensionBox := f_update_fitted_breakout_extension_box(clUpperFourHourBreakoutFittedExtensionBox, fourHourUpperFittedVisible and clFittedExtensionVisible, clZoneRightTime, clFittedExtensionRightTime, clLatestClosed4HHigh, fourHourUpperFittedBottom, true, clUpperBreakoutBg)
+clLowerFourHourBreakoutFittedExtensionBox := f_update_fitted_breakout_extension_box(clLowerFourHourBreakoutFittedExtensionBox, fourHourLowerFittedVisible and clFittedExtensionVisible, clZoneRightTime, clFittedExtensionRightTime, clLatestClosed4HLow, fourHourLowerFittedTop, false, clLowerBreakoutBg)
 
 if upperStackActive
     if clBreakoutZoneFittedMode
@@ -1273,7 +1234,7 @@ if upperStackActive
     else if clBreakoutZoneAnchoredMode
         clUpperStackBox := f_update_zone_box(clUpperStackBox, upperStackLeftTime, upperStackRightTime, upperStackTop, upperStackBottom, clStackUpperBg, clStackBorder, clStackBorderWidth, clExtendStackZonesRight)
     if clShowStackLabels
-        clUpperStackLabel := f_update_zone_label(clUpperStackLabel, clZoneRightTime, (upperStackTop + upperStackBottom) / 2.0, "Upper Stack Zone", clStackLabelTextColor, f_zone_label_size(clStackLabelSizeInput))
+        clUpperStackLabel := f_update_zone_label(clUpperStackLabel, clZoneRightTime, (upperStackTop + upperStackBottom) / 2.0, "Upper Daily Breakout", clStackLabelTextColor, f_zone_label_size(clStackLabelSizeInput))
     else
         if not na(clUpperStackLabel)
             label.delete(clUpperStackLabel)
@@ -1323,7 +1284,7 @@ if lowerStackActive
     else if clBreakoutZoneAnchoredMode
         clLowerStackBox := f_update_zone_box(clLowerStackBox, lowerStackLeftTime, lowerStackRightTime, lowerStackTop, lowerStackBottom, clStackLowerBg, clStackBorder, clStackBorderWidth, clExtendStackZonesRight)
     if clShowStackLabels
-        clLowerStackLabel := f_update_zone_label(clLowerStackLabel, clZoneRightTime, (lowerStackTop + lowerStackBottom) / 2.0, "Lower Stack Zone", clStackLabelTextColor, f_zone_label_size(clStackLabelSizeInput))
+        clLowerStackLabel := f_update_zone_label(clLowerStackLabel, clZoneRightTime, (lowerStackTop + lowerStackBottom) / 2.0, "Lower Daily Breakout", clStackLabelTextColor, f_zone_label_size(clStackLabelSizeInput))
     else
         if not na(clLowerStackLabel)
             label.delete(clLowerStackLabel)
@@ -1373,7 +1334,7 @@ if weeklyUpperStackActive
     else if clBreakoutZoneAnchoredMode
         clWeeklyUpperStackBox := f_update_zone_box(clWeeklyUpperStackBox, weeklyUpperLeftTime, weeklyUpperRightTime, weeklyUpperStackTop, weeklyUpperStackBottom, clWeeklyStackUpperBg, clWeeklyStackBorder, clWeeklyDailyStackBorderWidth, clExtendWeeklyDailyStackZonesRight)
     if clShowWeeklyDailyStackLabels
-        clWeeklyUpperStackLabel := f_update_zone_label(clWeeklyUpperStackLabel, clZoneRightTime, (weeklyUpperStackTop + weeklyUpperStackBottom) / 2.0, "Upper Weekly / Daily Stack", clWeeklyDailyStackLabelTextColor, f_zone_label_size(clWeeklyDailyStackLabelSizeInput))
+        clWeeklyUpperStackLabel := f_update_zone_label(clWeeklyUpperStackLabel, clZoneRightTime, (weeklyUpperStackTop + weeklyUpperStackBottom) / 2.0, "Upper Weekly Breakout", clWeeklyDailyStackLabelTextColor, f_zone_label_size(clWeeklyDailyStackLabelSizeInput))
     else
         if not na(clWeeklyUpperStackLabel)
             label.delete(clWeeklyUpperStackLabel)
@@ -1407,7 +1368,7 @@ if weeklyLowerStackActive
     else if clBreakoutZoneAnchoredMode
         clWeeklyLowerStackBox := f_update_zone_box(clWeeklyLowerStackBox, weeklyLowerLeftTime, weeklyLowerRightTime, weeklyLowerStackTop, weeklyLowerStackBottom, clWeeklyStackLowerBg, clWeeklyStackBorder, clWeeklyDailyStackBorderWidth, clExtendWeeklyDailyStackZonesRight)
     if clShowWeeklyDailyStackLabels
-        clWeeklyLowerStackLabel := f_update_zone_label(clWeeklyLowerStackLabel, clZoneRightTime, (weeklyLowerStackTop + weeklyLowerStackBottom) / 2.0, "Lower Weekly / Daily Stack", clWeeklyDailyStackLabelTextColor, f_zone_label_size(clWeeklyDailyStackLabelSizeInput))
+        clWeeklyLowerStackLabel := f_update_zone_label(clWeeklyLowerStackLabel, clZoneRightTime, (weeklyLowerStackTop + weeklyLowerStackBottom) / 2.0, "Lower Weekly Breakout", clWeeklyDailyStackLabelTextColor, f_zone_label_size(clWeeklyDailyStackLabelSizeInput))
     else
         if not na(clWeeklyLowerStackLabel)
             label.delete(clWeeklyLowerStackLabel)
@@ -1441,7 +1402,7 @@ if monthlyUpperStackActive
     else if clBreakoutZoneAnchoredMode
         clMonthlyUpperStackBox := f_update_zone_box(clMonthlyUpperStackBox, monthlyUpperLeftTime, monthlyUpperRightTime, monthlyUpperStackTop, monthlyUpperStackBottom, clMonthlyStackUpperBg, clMonthlyStackBorder, clMonthlyDailyStackBorderWidth, clExtendMonthlyDailyStackZonesRight)
     if clShowMonthlyDailyStackLabels
-        clMonthlyUpperStackLabel := f_update_zone_label(clMonthlyUpperStackLabel, clZoneRightTime, (monthlyUpperStackTop + monthlyUpperStackBottom) / 2.0, "Upper Monthly / Daily Stack", clMonthlyDailyStackLabelTextColor, f_zone_label_size(clMonthlyDailyStackLabelSizeInput))
+        clMonthlyUpperStackLabel := f_update_zone_label(clMonthlyUpperStackLabel, clZoneRightTime, (monthlyUpperStackTop + monthlyUpperStackBottom) / 2.0, "Upper Monthly Breakout", clMonthlyDailyStackLabelTextColor, f_zone_label_size(clMonthlyDailyStackLabelSizeInput))
     else
         if not na(clMonthlyUpperStackLabel)
             label.delete(clMonthlyUpperStackLabel)
@@ -1475,7 +1436,7 @@ if monthlyLowerStackActive
     else if clBreakoutZoneAnchoredMode
         clMonthlyLowerStackBox := f_update_zone_box(clMonthlyLowerStackBox, monthlyLowerLeftTime, monthlyLowerRightTime, monthlyLowerStackTop, monthlyLowerStackBottom, clMonthlyStackLowerBg, clMonthlyStackBorder, clMonthlyDailyStackBorderWidth, clExtendMonthlyDailyStackZonesRight)
     if clShowMonthlyDailyStackLabels
-        clMonthlyLowerStackLabel := f_update_zone_label(clMonthlyLowerStackLabel, clZoneRightTime, (monthlyLowerStackTop + monthlyLowerStackBottom) / 2.0, "Lower Monthly / Daily Stack", clMonthlyDailyStackLabelTextColor, f_zone_label_size(clMonthlyDailyStackLabelSizeInput))
+        clMonthlyLowerStackLabel := f_update_zone_label(clMonthlyLowerStackLabel, clZoneRightTime, (monthlyLowerStackTop + monthlyLowerStackBottom) / 2.0, "Lower Monthly Breakout", clMonthlyDailyStackLabelTextColor, f_zone_label_size(clMonthlyDailyStackLabelSizeInput))
     else
         if not na(clMonthlyLowerStackLabel)
             label.delete(clMonthlyLowerStackLabel)
@@ -1509,7 +1470,7 @@ if clUpperH1GapVisible
     else if clBreakoutZoneAnchoredMode
         clUpperH1GapBox := f_update_zone_box(clUpperH1GapBox, clH1GapLeftTime, clZoneRightTime, h1UpperGapTop, h1UpperGapBottom, clH1UpperBg, clH1Border, clH1GapBorderWidth, clExtendH1GapsRight)
     if clShowH1GapLabels
-        clUpperH1GapLabel := f_update_zone_label(clUpperH1GapLabel, clZoneRightTime, (h1UpperGapTop + h1UpperGapBottom) / 2.0, "Upper H1 Sweep Gap", clH1GapLabelTextColor, f_zone_label_size(clH1GapLabelSizeInput))
+        clUpperH1GapLabel := f_update_zone_label(clUpperH1GapLabel, clZoneRightTime, (h1UpperGapTop + h1UpperGapBottom) / 2.0, "Upper Hourly Breakout", clH1GapLabelTextColor, f_zone_label_size(clH1GapLabelSizeInput))
     else
         if not na(clUpperH1GapLabel)
             label.delete(clUpperH1GapLabel)
@@ -1543,7 +1504,7 @@ if clLowerH1GapVisible
     else if clBreakoutZoneAnchoredMode
         clLowerH1GapBox := f_update_zone_box(clLowerH1GapBox, clH1GapLeftTime, clZoneRightTime, h1LowerGapTop, h1LowerGapBottom, clH1LowerBg, clH1Border, clH1GapBorderWidth, clExtendH1GapsRight)
     if clShowH1GapLabels
-        clLowerH1GapLabel := f_update_zone_label(clLowerH1GapLabel, clZoneRightTime, (h1LowerGapTop + h1LowerGapBottom) / 2.0, "Lower H1 Sweep Gap", clH1GapLabelTextColor, f_zone_label_size(clH1GapLabelSizeInput))
+        clLowerH1GapLabel := f_update_zone_label(clLowerH1GapLabel, clZoneRightTime, (h1LowerGapTop + h1LowerGapBottom) / 2.0, "Lower Hourly Breakout", clH1GapLabelTextColor, f_zone_label_size(clH1GapLabelSizeInput))
     else
         if not na(clLowerH1GapLabel)
             label.delete(clLowerH1GapLabel)
@@ -1567,203 +1528,73 @@ else
         label.delete(clLowerH1GapPointsLabel)
         clLowerH1GapPointsLabel := na
 
-clZoneAtr = ta.atr(clZoneAtrLength)
-clNearDistance = clNearMode == "Fixed Points" ? clNearDistancePoints : clNearMode == "Ticks" ? clNearDistanceTicks * syminfo.mintick : clNearDistanceAtrMultiplier * clZoneAtr
-
-clStackAlertsOn = clEnableZoneAlerts and clEnableStackZoneAlerts
-clWeeklyStackAlertsOn = clEnableZoneAlerts and clEnableWeeklyDailyStackZoneAlerts
-clMonthlyStackAlertsOn = clEnableZoneAlerts and clEnableMonthlyDailyStackZoneAlerts
-clH1AlertsOn = clEnableZoneAlerts and clEnableH1SweepGapAlerts
-
-clStackUpperNearState = upperStackActive and f_zone_near(close, upperStackTop, upperStackBottom, clNearDistance)
-clStackLowerNearState = lowerStackActive and f_zone_near(close, lowerStackTop, lowerStackBottom, clNearDistance)
-clStackUpperEnteredState = upperStackActive and f_zone_entered(upperStackTop, upperStackBottom, clZoneAlertTriggerBasis)
-clStackLowerEnteredState = lowerStackActive and f_zone_entered(lowerStackTop, lowerStackBottom, clZoneAlertTriggerBasis)
-clStackUpperClearedState = upperStackActive and f_zone_clear_above(upperStackTop, clZoneAlertTriggerBasis)
-clStackLowerClearedState = lowerStackActive and f_zone_clear_below(lowerStackBottom, clZoneAlertTriggerBasis)
-
-clWeeklyStackUpperNearState = weeklyUpperStackActive and f_zone_near(close, weeklyUpperStackTop, weeklyUpperStackBottom, clNearDistance)
-clWeeklyStackLowerNearState = weeklyLowerStackActive and f_zone_near(close, weeklyLowerStackTop, weeklyLowerStackBottom, clNearDistance)
-clWeeklyStackUpperEnteredState = weeklyUpperStackActive and f_zone_entered(weeklyUpperStackTop, weeklyUpperStackBottom, clZoneAlertTriggerBasis)
-clWeeklyStackLowerEnteredState = weeklyLowerStackActive and f_zone_entered(weeklyLowerStackTop, weeklyLowerStackBottom, clZoneAlertTriggerBasis)
-clWeeklyStackUpperClearedState = weeklyUpperStackActive and f_zone_clear_above(weeklyUpperStackTop, clZoneAlertTriggerBasis)
-clWeeklyStackLowerClearedState = weeklyLowerStackActive and f_zone_clear_below(weeklyLowerStackBottom, clZoneAlertTriggerBasis)
-
-clMonthlyStackUpperNearState = monthlyUpperStackActive and f_zone_near(close, monthlyUpperStackTop, monthlyUpperStackBottom, clNearDistance)
-clMonthlyStackLowerNearState = monthlyLowerStackActive and f_zone_near(close, monthlyLowerStackTop, monthlyLowerStackBottom, clNearDistance)
-clMonthlyStackUpperEnteredState = monthlyUpperStackActive and f_zone_entered(monthlyUpperStackTop, monthlyUpperStackBottom, clZoneAlertTriggerBasis)
-clMonthlyStackLowerEnteredState = monthlyLowerStackActive and f_zone_entered(monthlyLowerStackTop, monthlyLowerStackBottom, clZoneAlertTriggerBasis)
-clMonthlyStackUpperClearedState = monthlyUpperStackActive and f_zone_clear_above(monthlyUpperStackTop, clZoneAlertTriggerBasis)
-clMonthlyStackLowerClearedState = monthlyLowerStackActive and f_zone_clear_below(monthlyLowerStackBottom, clZoneAlertTriggerBasis)
-
-clH1UpperNearState = clUpperH1GapVisible and f_zone_near(close, h1UpperGapTop, h1UpperGapBottom, clNearDistance)
-clH1LowerNearState = clLowerH1GapVisible and f_zone_near(close, h1LowerGapTop, h1LowerGapBottom, clNearDistance)
-clH1UpperEnteredState = clUpperH1GapVisible and f_zone_entered(h1UpperGapTop, h1UpperGapBottom, clZoneAlertTriggerBasis)
-clH1LowerEnteredState = clLowerH1GapVisible and f_zone_entered(h1LowerGapTop, h1LowerGapBottom, clZoneAlertTriggerBasis)
-clH1ValuesReady = clShowZonesAllowed and clShowH1SweepGaps and not na(clCurrentHourHigh) and not na(clCurrentHourLow) and not na(clPreviousHourHigh) and not na(clPreviousHourLow)
-clH1UpperSweptState = clH1ValuesReady and clShowUpperH1SweepGap and clCurrentHourHigh >= clPreviousHourHigh
-clH1LowerSweptState = clH1ValuesReady and clShowLowerH1SweepGap and clCurrentHourLow <= clPreviousHourLow
-
-clStackUpperNear = clStackAlertsOn and clAlertStackNear and clStackUpperNearState and not clStackUpperNearState[1]
-clStackUpperEntered = clStackAlertsOn and clAlertStackEntered and clStackUpperEnteredState and not clStackUpperEnteredState[1]
-clStackUpperCleared = clStackAlertsOn and clAlertStackCleared and clStackUpperClearedState and not clStackUpperClearedState[1]
-clStackLowerNear = clStackAlertsOn and clAlertStackNear and clStackLowerNearState and not clStackLowerNearState[1]
-clStackLowerEntered = clStackAlertsOn and clAlertStackEntered and clStackLowerEnteredState and not clStackLowerEnteredState[1]
-clStackLowerCleared = clStackAlertsOn and clAlertStackCleared and clStackLowerClearedState and not clStackLowerClearedState[1]
-
-clWeeklyStackUpperNear = clWeeklyStackAlertsOn and clAlertWeeklyDailyStackNear and clWeeklyStackUpperNearState and not clWeeklyStackUpperNearState[1]
-clWeeklyStackUpperEntered = clWeeklyStackAlertsOn and clAlertWeeklyDailyStackEntered and clWeeklyStackUpperEnteredState and not clWeeklyStackUpperEnteredState[1]
-clWeeklyStackUpperCleared = clWeeklyStackAlertsOn and clAlertWeeklyDailyStackCleared and clWeeklyStackUpperClearedState and not clWeeklyStackUpperClearedState[1]
-clWeeklyStackLowerNear = clWeeklyStackAlertsOn and clAlertWeeklyDailyStackNear and clWeeklyStackLowerNearState and not clWeeklyStackLowerNearState[1]
-clWeeklyStackLowerEntered = clWeeklyStackAlertsOn and clAlertWeeklyDailyStackEntered and clWeeklyStackLowerEnteredState and not clWeeklyStackLowerEnteredState[1]
-clWeeklyStackLowerCleared = clWeeklyStackAlertsOn and clAlertWeeklyDailyStackCleared and clWeeklyStackLowerClearedState and not clWeeklyStackLowerClearedState[1]
-
-clMonthlyStackUpperNear = clMonthlyStackAlertsOn and clAlertMonthlyDailyStackNear and clMonthlyStackUpperNearState and not clMonthlyStackUpperNearState[1]
-clMonthlyStackUpperEntered = clMonthlyStackAlertsOn and clAlertMonthlyDailyStackEntered and clMonthlyStackUpperEnteredState and not clMonthlyStackUpperEnteredState[1]
-clMonthlyStackUpperCleared = clMonthlyStackAlertsOn and clAlertMonthlyDailyStackCleared and clMonthlyStackUpperClearedState and not clMonthlyStackUpperClearedState[1]
-clMonthlyStackLowerNear = clMonthlyStackAlertsOn and clAlertMonthlyDailyStackNear and clMonthlyStackLowerNearState and not clMonthlyStackLowerNearState[1]
-clMonthlyStackLowerEntered = clMonthlyStackAlertsOn and clAlertMonthlyDailyStackEntered and clMonthlyStackLowerEnteredState and not clMonthlyStackLowerEnteredState[1]
-clMonthlyStackLowerCleared = clMonthlyStackAlertsOn and clAlertMonthlyDailyStackCleared and clMonthlyStackLowerClearedState and not clMonthlyStackLowerClearedState[1]
-
-clH1UpperNear = clH1AlertsOn and clAlertH1GapNear and clH1UpperNearState and not clH1UpperNearState[1]
-clH1UpperEntered = clH1AlertsOn and clAlertH1GapEntered and clH1UpperEnteredState and not clH1UpperEnteredState[1]
-clH1UpperSwept = clH1AlertsOn and clAlertH1Swept and clH1UpperSweptState and not clH1UpperSweptState[1]
-clH1LowerNear = clH1AlertsOn and clAlertH1GapNear and clH1LowerNearState and not clH1LowerNearState[1]
-clH1LowerEntered = clH1AlertsOn and clAlertH1GapEntered and clH1LowerEnteredState and not clH1LowerEnteredState[1]
-clH1LowerSwept = clH1AlertsOn and clAlertH1Swept and clH1LowerSweptState and not clH1LowerSweptState[1]
-
-clHtfStackNear = clWeeklyStackUpperNear or clWeeklyStackLowerNear or clMonthlyStackUpperNear or clMonthlyStackLowerNear
-clHtfStackEntered = clWeeklyStackUpperEntered or clWeeklyStackLowerEntered or clMonthlyStackUpperEntered or clMonthlyStackLowerEntered
-clHtfStackCleared = clWeeklyStackUpperCleared or clWeeklyStackLowerCleared or clMonthlyStackUpperCleared or clMonthlyStackLowerCleared
-
-alertcondition(clStackUpperNear, title="Stack Zone - Near Upper", message="Price is near the Daily / 4H Upper Stack Zone")
-alertcondition(clStackUpperEntered, title="Stack Zone - Entered Upper", message="Daily / 4H Upper Stack Zone entered")
-alertcondition(clStackUpperCleared, title="Stack Zone - Cleared Upper", message="Daily / 4H Upper Stack Zone cleared")
-alertcondition(clStackLowerNear, title="Stack Zone - Near Lower", message="Price is near the Daily / 4H Lower Stack Zone")
-alertcondition(clStackLowerEntered, title="Stack Zone - Entered Lower", message="Daily / 4H Lower Stack Zone entered")
-alertcondition(clStackLowerCleared, title="Stack Zone - Cleared Lower", message="Daily / 4H Lower Stack Zone cleared")
-
-alertcondition(clHtfStackNear, title="HTF Stack Zone - Near", message="Price is near a Weekly / Daily or Monthly / Daily Stack Zone")
-alertcondition(clHtfStackEntered, title="HTF Stack Zone - Entered", message="Price entered a Weekly / Daily or Monthly / Daily Stack Zone")
-alertcondition(clHtfStackCleared, title="HTF Stack Zone - Cleared", message="Price cleared a Weekly / Daily or Monthly / Daily Stack Zone")
-
-alertcondition(clH1UpperNear, title="H1 Gap - Near Upper", message="Near Upper H1 Sweep Gap")
-alertcondition(clH1UpperEntered, title="H1 Gap - Entered Upper", message="Upper H1 Sweep Gap entered")
-alertcondition(clH1UpperSwept, title="H1 Gap - Swept Upper", message="Previous H1 High swept")
-alertcondition(clH1LowerNear, title="H1 Gap - Near Lower", message="Near Lower H1 Sweep Gap")
-alertcondition(clH1LowerEntered, title="H1 Gap - Entered Lower", message="Lower H1 Sweep Gap entered")
-alertcondition(clH1LowerSwept, title="H1 Gap - Swept Lower", message="Previous H1 Low swept")
-
-if clEnableDynamicZoneAlerts
-    if clStackUpperNear
-        alert("Near Daily / 4H Upper Stack Zone", alert.freq_once_per_bar)
-    if clStackUpperEntered
-        alert("Daily / 4H Upper Stack Zone entered", alert.freq_once_per_bar)
-    if clStackUpperCleared
-        alert("Daily / 4H Upper Stack Zone cleared", alert.freq_once_per_bar)
-    if clStackLowerNear
-        alert("Near Daily / 4H Lower Stack Zone", alert.freq_once_per_bar)
-    if clStackLowerEntered
-        alert("Daily / 4H Lower Stack Zone entered", alert.freq_once_per_bar)
-    if clStackLowerCleared
-        alert("Daily / 4H Lower Stack Zone cleared", alert.freq_once_per_bar)
-    if clWeeklyStackUpperNear
-        alert("Near Weekly / Daily Upper Stack Zone", alert.freq_once_per_bar)
-    if clWeeklyStackUpperEntered
-        alert("Weekly / Daily Upper Stack Zone entered", alert.freq_once_per_bar)
-    if clWeeklyStackUpperCleared
-        alert("Weekly / Daily Upper Stack Zone cleared", alert.freq_once_per_bar)
-    if clWeeklyStackLowerNear
-        alert("Near Weekly / Daily Lower Stack Zone", alert.freq_once_per_bar)
-    if clWeeklyStackLowerEntered
-        alert("Weekly / Daily Lower Stack Zone entered", alert.freq_once_per_bar)
-    if clWeeklyStackLowerCleared
-        alert("Weekly / Daily Lower Stack Zone cleared", alert.freq_once_per_bar)
-    if clMonthlyStackUpperNear
-        alert("Near Monthly / Daily Upper Stack Zone", alert.freq_once_per_bar)
-    if clMonthlyStackUpperEntered
-        alert("Monthly / Daily Upper Stack Zone entered", alert.freq_once_per_bar)
-    if clMonthlyStackUpperCleared
-        alert("Monthly / Daily Upper Stack Zone cleared", alert.freq_once_per_bar)
-    if clMonthlyStackLowerNear
-        alert("Near Monthly / Daily Lower Stack Zone", alert.freq_once_per_bar)
-    if clMonthlyStackLowerEntered
-        alert("Monthly / Daily Lower Stack Zone entered", alert.freq_once_per_bar)
-    if clMonthlyStackLowerCleared
-        alert("Monthly / Daily Lower Stack Zone cleared", alert.freq_once_per_bar)
-    if clH1UpperNear
-        alert("Near Upper H1 Sweep Gap", alert.freq_once_per_bar)
-    if clH1UpperEntered
-        alert("Upper H1 Sweep Gap entered", alert.freq_once_per_bar)
-    if clH1UpperSwept
-        alert("Previous H1 High swept", alert.freq_once_per_bar)
-    if clH1LowerNear
-        alert("Near Lower H1 Sweep Gap", alert.freq_once_per_bar)
-    if clH1LowerEntered
-        alert("Lower H1 Sweep Gap entered", alert.freq_once_per_bar)
-    if clH1LowerSwept
-        alert("Previous H1 Low swept", alert.freq_once_per_bar)
-
-clHtfUseCurrentLevels = clHtfDistanceTableLevelSource == "Current Developing Period"
-clHtfH1High = clHtfUseCurrentLevels ? clCurrentHourHigh : clPreviousHourHigh
-clHtfH1Low = clHtfUseCurrentLevels ? clCurrentHourLow : clPreviousHourLow
-clHtf4HHigh = clHtfUseCurrentLevels ? clCur4HHigh : clLatestClosed4HHigh
-clHtf4HLow = clHtfUseCurrentLevels ? clCur4HLow : clLatestClosed4HLow
-clHtfDayHigh = clHtfUseCurrentLevels ? clCurDayHigh : clPreviousDayHigh
-clHtfDayLow = clHtfUseCurrentLevels ? clCurDayLow : clPreviousDayLow
-clHtfWeekHigh = clHtfUseCurrentLevels ? clCurWeekHigh : clPreviousWeekHigh
-clHtfWeekLow = clHtfUseCurrentLevels ? clCurWeekLow : clPreviousWeekLow
-clHtfMonthHigh = clHtfUseCurrentLevels ? clCurMonthHigh : clPreviousMonthHigh
-clHtfMonthLow = clHtfUseCurrentLevels ? clCurMonthLow : clPreviousMonthLow
-
-if barstate.islast
-    clHtfTableTextSize = f_panel_text_size(clHtfDistanceTableTextSizeInput)
-    clHtfHiddenColor = color.new(color.black, 100)
-    clHtfTableBg = color.new(clHtfDistanceTableBackgroundColor, clHtfDistanceTableTransparency)
-    table.set_position(clHtfDistanceTable, f_htf_distance_table_position(clHtfDistanceTablePositionInput))
-
-    if clShowHtfDistanceTable
-        table.set_bgcolor(clHtfDistanceTable, clHtfTableBg)
-        table.set_frame_color(clHtfDistanceTable, clHtfDistanceTableBorderColor)
-        table.set_frame_width(clHtfDistanceTable, clHtfDistanceTableBorderWidth)
-        table.set_border_color(clHtfDistanceTable, clHtfDistanceTableBorderColor)
-        table.set_border_width(clHtfDistanceTable, clHtfDistanceTableBorderWidth)
+if clUpperFourHourBreakoutVisible
+    if clBreakoutZoneFittedMode
+        if not na(clUpperFourHourBreakoutBox)
+            box.delete(clUpperFourHourBreakoutBox)
+            clUpperFourHourBreakoutBox := na
+    else if clBreakoutZoneFloatingMode
+        clUpperFourHourBreakoutBox := f_update_zone_box_index(clUpperFourHourBreakoutBox, bar_index - clFloatingWindowBarsBack, bar_index + clFloatingWindowBarsForward, fourHourUpperBreakoutTop, fourHourUpperBreakoutBottom, clUpperBreakoutBg, clBreakoutBorder, clBreakoutBorderWidth)
+    else if clBreakoutZoneAnchoredMode
+        clUpperFourHourBreakoutBox := f_update_zone_box(clUpperFourHourBreakoutBox, clFourHourBreakoutLeftTime, clZoneRightTime, fourHourUpperBreakoutTop, fourHourUpperBreakoutBottom, clUpperBreakoutBg, clBreakoutBorder, clBreakoutBorderWidth, clExtendBreakoutZonesRight)
+    if clShowBreakoutLabels
+        clUpperFourHourBreakoutLabel := f_update_zone_label(clUpperFourHourBreakoutLabel, clZoneRightTime, (fourHourUpperBreakoutTop + fourHourUpperBreakoutBottom) / 2.0, "Upper Four Hour Breakout", clBreakoutLabelTextColor, f_zone_label_size(clBreakoutLabelSizeInput))
     else
-        table.set_bgcolor(clHtfDistanceTable, clHtfHiddenColor)
-        table.set_frame_color(clHtfDistanceTable, clHtfHiddenColor)
-        table.set_frame_width(clHtfDistanceTable, 0)
-        table.set_border_color(clHtfDistanceTable, clHtfHiddenColor)
-        table.set_border_width(clHtfDistanceTable, 0)
+        if not na(clUpperFourHourBreakoutLabel)
+            label.delete(clUpperFourHourBreakoutLabel)
+            clUpperFourHourBreakoutLabel := na
+    if clShowPointsTillBreakLabels
+        fourHourUpperPointsX = clBreakoutZoneFloatingMode ? f_floating_points_label_x() : f_points_label_x(fourHourBreakoutLeftBarIndex, bar_index, clExtendBreakoutZonesRight)
+        fourHourUpperPointsY = clBreakoutZoneFittedMode ? (clLatestClosed4HHigh + fourHourUpperFittedBottom) / 2.0 : (fourHourUpperBreakoutTop + fourHourUpperBreakoutBottom) / 2.0
+        clUpperFourHourBreakoutPointsLabel := f_update_points_label(clUpperFourHourBreakoutPointsLabel, fourHourUpperPointsX, fourHourUpperPointsY, f_points_text(clLatestClosed4HHigh - close), clPointsTillBreakLabelTextColor, f_zone_label_size(clPointsTillBreakLabelSizeInput))
+    else
+        if not na(clUpperFourHourBreakoutPointsLabel)
+            label.delete(clUpperFourHourBreakoutPointsLabel)
+            clUpperFourHourBreakoutPointsLabel := na
+else
+    if not na(clUpperFourHourBreakoutBox)
+        box.delete(clUpperFourHourBreakoutBox)
+        clUpperFourHourBreakoutBox := na
+    if not na(clUpperFourHourBreakoutLabel)
+        label.delete(clUpperFourHourBreakoutLabel)
+        clUpperFourHourBreakoutLabel := na
+    if not na(clUpperFourHourBreakoutPointsLabel)
+        label.delete(clUpperFourHourBreakoutPointsLabel)
+        clUpperFourHourBreakoutPointsLabel := na
 
-    for clHtfClearRow = 0 to 5
-        table.cell(clHtfDistanceTable, 0, clHtfClearRow, "", text_color=clHtfHiddenColor, text_size=clHtfTableTextSize, bgcolor=clHtfHiddenColor)
-        table.cell(clHtfDistanceTable, 1, clHtfClearRow, "", text_color=clHtfHiddenColor, text_size=clHtfTableTextSize, bgcolor=clHtfHiddenColor)
-        table.cell(clHtfDistanceTable, 2, clHtfClearRow, "", text_color=clHtfHiddenColor, text_size=clHtfTableTextSize, bgcolor=clHtfHiddenColor)
-
-    if clShowHtfDistanceTable
-        table.cell(clHtfDistanceTable, 0, 0, "TF", text_color=clHtfDistanceTableHeaderTextColor, text_size=clHtfTableTextSize, bgcolor=clHtfTableBg)
-        table.cell(clHtfDistanceTable, 1, 0, "High", text_color=clHtfDistanceTableHeaderTextColor, text_size=clHtfTableTextSize, bgcolor=clHtfTableBg)
-        table.cell(clHtfDistanceTable, 2, 0, "Low", text_color=clHtfDistanceTableHeaderTextColor, text_size=clHtfTableTextSize, bgcolor=clHtfTableBg)
-
-        table.cell(clHtfDistanceTable, 0, 1, "H1", text_color=clHtfDistanceTableTextColor, text_size=clHtfTableTextSize, bgcolor=clHtfTableBg)
-        table.cell(clHtfDistanceTable, 1, 1, f_htf_distance_text(clHtfH1High, true, clHtfDistanceShowSigned), text_color=clHtfDistanceTableTextColor, text_size=clHtfTableTextSize, bgcolor=clHtfTableBg)
-        table.cell(clHtfDistanceTable, 2, 1, f_htf_distance_text(clHtfH1Low, false, clHtfDistanceShowSigned), text_color=clHtfDistanceTableTextColor, text_size=clHtfTableTextSize, bgcolor=clHtfTableBg)
-
-        table.cell(clHtfDistanceTable, 0, 2, "4H", text_color=clHtfDistanceTableTextColor, text_size=clHtfTableTextSize, bgcolor=clHtfTableBg)
-        table.cell(clHtfDistanceTable, 1, 2, f_htf_distance_text(clHtf4HHigh, true, clHtfDistanceShowSigned), text_color=clHtfDistanceTableTextColor, text_size=clHtfTableTextSize, bgcolor=clHtfTableBg)
-        table.cell(clHtfDistanceTable, 2, 2, f_htf_distance_text(clHtf4HLow, false, clHtfDistanceShowSigned), text_color=clHtfDistanceTableTextColor, text_size=clHtfTableTextSize, bgcolor=clHtfTableBg)
-
-        table.cell(clHtfDistanceTable, 0, 3, "D", text_color=clHtfDistanceTableTextColor, text_size=clHtfTableTextSize, bgcolor=clHtfTableBg)
-        table.cell(clHtfDistanceTable, 1, 3, f_htf_distance_text(clHtfDayHigh, true, clHtfDistanceShowSigned), text_color=clHtfDistanceTableTextColor, text_size=clHtfTableTextSize, bgcolor=clHtfTableBg)
-        table.cell(clHtfDistanceTable, 2, 3, f_htf_distance_text(clHtfDayLow, false, clHtfDistanceShowSigned), text_color=clHtfDistanceTableTextColor, text_size=clHtfTableTextSize, bgcolor=clHtfTableBg)
-
-        table.cell(clHtfDistanceTable, 0, 4, "W", text_color=clHtfDistanceTableTextColor, text_size=clHtfTableTextSize, bgcolor=clHtfTableBg)
-        table.cell(clHtfDistanceTable, 1, 4, f_htf_distance_text(clHtfWeekHigh, true, clHtfDistanceShowSigned), text_color=clHtfDistanceTableTextColor, text_size=clHtfTableTextSize, bgcolor=clHtfTableBg)
-        table.cell(clHtfDistanceTable, 2, 4, f_htf_distance_text(clHtfWeekLow, false, clHtfDistanceShowSigned), text_color=clHtfDistanceTableTextColor, text_size=clHtfTableTextSize, bgcolor=clHtfTableBg)
-
-        table.cell(clHtfDistanceTable, 0, 5, "M", text_color=clHtfDistanceTableTextColor, text_size=clHtfTableTextSize, bgcolor=clHtfTableBg)
-        table.cell(clHtfDistanceTable, 1, 5, f_htf_distance_text(clHtfMonthHigh, true, clHtfDistanceShowSigned), text_color=clHtfDistanceTableTextColor, text_size=clHtfTableTextSize, bgcolor=clHtfTableBg)
-        table.cell(clHtfDistanceTable, 2, 5, f_htf_distance_text(clHtfMonthLow, false, clHtfDistanceShowSigned), text_color=clHtfDistanceTableTextColor, text_size=clHtfTableTextSize, bgcolor=clHtfTableBg)
+if clLowerFourHourBreakoutVisible
+    if clBreakoutZoneFittedMode
+        if not na(clLowerFourHourBreakoutBox)
+            box.delete(clLowerFourHourBreakoutBox)
+            clLowerFourHourBreakoutBox := na
+    else if clBreakoutZoneFloatingMode
+        clLowerFourHourBreakoutBox := f_update_zone_box_index(clLowerFourHourBreakoutBox, bar_index - clFloatingWindowBarsBack, bar_index + clFloatingWindowBarsForward, fourHourLowerBreakoutTop, fourHourLowerBreakoutBottom, clLowerBreakoutBg, clBreakoutBorder, clBreakoutBorderWidth)
+    else if clBreakoutZoneAnchoredMode
+        clLowerFourHourBreakoutBox := f_update_zone_box(clLowerFourHourBreakoutBox, clFourHourBreakoutLeftTime, clZoneRightTime, fourHourLowerBreakoutTop, fourHourLowerBreakoutBottom, clLowerBreakoutBg, clBreakoutBorder, clBreakoutBorderWidth, clExtendBreakoutZonesRight)
+    if clShowBreakoutLabels
+        clLowerFourHourBreakoutLabel := f_update_zone_label(clLowerFourHourBreakoutLabel, clZoneRightTime, (fourHourLowerBreakoutTop + fourHourLowerBreakoutBottom) / 2.0, "Lower Four Hour Breakout", clBreakoutLabelTextColor, f_zone_label_size(clBreakoutLabelSizeInput))
+    else
+        if not na(clLowerFourHourBreakoutLabel)
+            label.delete(clLowerFourHourBreakoutLabel)
+            clLowerFourHourBreakoutLabel := na
+    if clShowPointsTillBreakLabels
+        fourHourLowerPointsX = clBreakoutZoneFloatingMode ? f_floating_points_label_x() : f_points_label_x(fourHourBreakoutLeftBarIndex, bar_index, clExtendBreakoutZonesRight)
+        fourHourLowerPointsY = clBreakoutZoneFittedMode ? (clLatestClosed4HLow + fourHourLowerFittedTop) / 2.0 : (fourHourLowerBreakoutTop + fourHourLowerBreakoutBottom) / 2.0
+        clLowerFourHourBreakoutPointsLabel := f_update_points_label(clLowerFourHourBreakoutPointsLabel, fourHourLowerPointsX, fourHourLowerPointsY, f_points_text(close - clLatestClosed4HLow), clPointsTillBreakLabelTextColor, f_zone_label_size(clPointsTillBreakLabelSizeInput))
+    else
+        if not na(clLowerFourHourBreakoutPointsLabel)
+            label.delete(clLowerFourHourBreakoutPointsLabel)
+            clLowerFourHourBreakoutPointsLabel := na
+else
+    if not na(clLowerFourHourBreakoutBox)
+        box.delete(clLowerFourHourBreakoutBox)
+        clLowerFourHourBreakoutBox := na
+    if not na(clLowerFourHourBreakoutLabel)
+        label.delete(clLowerFourHourBreakoutLabel)
+        clLowerFourHourBreakoutLabel := na
+    if not na(clLowerFourHourBreakoutPointsLabel)
+        label.delete(clLowerFourHourBreakoutPointsLabel)
+        clLowerFourHourBreakoutPointsLabel := na
 
 //=================================================================================================================================================================================
 // SECTION 7 – MOVING AVERAGE SUITE
@@ -1776,9 +1607,8 @@ maSource  = input.source(close, "Source", group=groupMA)
 maColor   = input.color(#a58700, "Line Color", group=groupMA)
 lineWidth = input.int(1, "Line Width", minval=1, maxval=5, group=groupMA)
 
-fillEnable  = input.bool(false, "Fill Between MA 1 and MA 2", group=groupFA, tooltip="Visual fill and alert controls for the first two moving averages.")
+fillEnable  = input.bool(false, "Fill Between MA 1 and MA 2", group=groupFA, tooltip="Visual fill controls for the first two moving averages.")
 fillColor   = input.color(color.new(#a58700, 80), "Fill Color", group=groupFA)
-alertEnable = input.bool(false, "Enable MA 1 / MA 2 Alerts", group=groupFA)
 
 showLine1  = input.bool(true, "Show MA 1", group=groupMA)
 length1    = input.int(200, "MA 1 Length", group=groupMA)
@@ -1857,8 +1687,6 @@ p9  = plot(showLine9 ? ma9 + offset9 : na, color=maColor, linewidth=lineWidth, s
 p10 = plot(showLine10 ? ma10 + offset10 : na, color=maColor, linewidth=lineWidth, style=plot.style_line, title="MA 10")
 
 fill(p1, p2, color=fillEnable ? fillColor : na)
-alertcondition(alertEnable and ta.crossover(ma1, ma2), title="MA 1 Cross Above MA 2", message="MA 1 crossed above MA 2")
-alertcondition(alertEnable and ta.crossunder(ma1, ma2), title="MA 1 Cross Below MA 2", message="MA 1 crossed below MA 2")
 
 //=================================================================================================================================================================================
 // SECTION 8 – BOLLINGER BANDS
