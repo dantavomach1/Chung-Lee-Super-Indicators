@@ -2,6 +2,7 @@
 
 ## 2026-05-28
 
+- `2026-05-28-retain-cleared-breakout-zones`: Added a master Keep Cleared Breakout Zones option plus per-timeframe retain toggles, with one retained historical box per timeframe/side that freezes the last valid breakout-zone boundaries when cleared and resets when the source anchor rolls forward.
 - `2026-05-28-break-zone-label-distance-fix`: Changed all Hourly, Four Hour, Daily, Weekly, and Monthly breakout points labels to measure the shaded zone height from the zone boundary prices instead of from live price, and updated the label text to `{points} pts till {timeframe} break`.
 
 ## 2026-05-27

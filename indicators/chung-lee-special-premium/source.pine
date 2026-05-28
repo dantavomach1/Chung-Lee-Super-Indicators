@@ -132,6 +132,13 @@ clShowDailyBreakoutZone = input.bool(true, "Daily", group=groupBreakoutZones, to
 clShowWeeklyBreakoutZone = input.bool(false, "Weekly", group=groupBreakoutZones, tooltip="Shows both upper and lower Weekly Breakout Zones.")
 clShowMonthlyBreakoutZone = input.bool(false, "Monthly", group=groupBreakoutZones, tooltip="Shows both upper and lower Monthly Breakout Zones.")
 
+clKeepClearedBreakoutZones = input.bool(false, "Keep Cleared Breakout Zones", group=groupBreakoutZones, tooltip="Keeps the most recently cleared breakout zone printed historically until that timeframe's source anchor rolls forward.")
+clKeepClearedHourlyZones = input.bool(true, "Keep Cleared Hourly Zones", group=groupBreakoutZones, inline="bz-keep-h1", display=menuDisplay)
+clKeepClearedFourHourZones = input.bool(true, "Keep Cleared Four Hour Zones", group=groupBreakoutZones, inline="bz-keep-4h", display=menuDisplay)
+clKeepClearedDailyZones = input.bool(true, "Keep Cleared Daily Zones", group=groupBreakoutZones, inline="bz-keep-d", display=menuDisplay)
+clKeepClearedWeeklyZones = input.bool(true, "Keep Cleared Weekly Zones", group=groupBreakoutZones, inline="bz-keep-w", display=menuDisplay)
+clKeepClearedMonthlyZones = input.bool(true, "Keep Cleared Monthly Zones", group=groupBreakoutZones, inline="bz-keep-m", display=menuDisplay)
+
 clFittedBreakoutExtendRight = input.bool(true, "Right Extension", group=groupBreakoutZones, tooltip=fittedBreakoutTooltip)
 clFittedBreakoutExtensionBars = input.int(75, "Extension Bars", minval=0, maxval=500, group=groupBreakoutZones, display=menuDisplay)
 
@@ -274,6 +281,32 @@ f_update_zone_box_index(_box, _left, _right, _top, _bottom, _bgColor, _borderCol
         box.set_border_color(result, _borderColor)
         box.set_border_width(result, _borderWidth)
         box.set_extend(result, extend.none)
+    result
+
+f_update_retained_zone_box(_box, _enabled, _left, _right, _top, _bottom, _bgColor, _borderColor, _borderWidth) =>
+    box result = _box
+    zoneTop = math.max(_top, _bottom)
+    zoneBottom = math.min(_top, _bottom)
+    validBox = _enabled and not na(_left) and not na(_right) and not na(zoneTop) and not na(zoneBottom) and _right > _left and zoneTop > zoneBottom
+    if validBox
+        if na(result)
+            result := box.new(_left, zoneTop, _right, zoneBottom, xloc=xloc.bar_time, extend=extend.none, bgcolor=_bgColor, border_color=_borderColor, border_width=_borderWidth)
+        else
+            box.set_left(result, _left)
+            box.set_right(result, _right)
+            box.set_top(result, zoneTop)
+            box.set_bottom(result, zoneBottom)
+            box.set_bgcolor(result, _bgColor)
+            box.set_border_color(result, _borderColor)
+            box.set_border_width(result, _borderWidth)
+            box.set_extend(result, extend.none)
+    result
+
+f_delete_zone_box(_box) =>
+    box result = _box
+    if not na(result)
+        box.delete(result)
+        result := na
     result
 
 f_clear_zone_fill_boxes(_boxes) =>
@@ -886,6 +919,7 @@ else
 
 clPreviousHourHigh = request.security(syminfo.tickerid, "60", high[1], gaps=barmerge.gaps_off, lookahead=barmerge.lookahead_off)
 clPreviousHourLow = request.security(syminfo.tickerid, "60", low[1], gaps=barmerge.gaps_off, lookahead=barmerge.lookahead_off)
+clPreviousHourStartTime = request.security(syminfo.tickerid, "60", time[1], gaps=barmerge.gaps_off, lookahead=barmerge.lookahead_off)
 clCurrentHourHigh = request.security(syminfo.tickerid, "60", high, gaps=barmerge.gaps_off, lookahead=barmerge.lookahead_off)
 clCurrentHourLow = request.security(syminfo.tickerid, "60", low, gaps=barmerge.gaps_off, lookahead=barmerge.lookahead_off)
 clCurrentHourStartTime = request.security(syminfo.tickerid, "60", time, gaps=barmerge.gaps_off, lookahead=barmerge.lookahead_off)
@@ -1001,6 +1035,17 @@ var box clLowerH1GapBox = na
 var box clUpperFourHourBreakoutBox = na
 var box clLowerFourHourBreakoutBox = na
 
+var box clRetainedUpperStackBox = na
+var box clRetainedLowerStackBox = na
+var box clRetainedWeeklyUpperStackBox = na
+var box clRetainedWeeklyLowerStackBox = na
+var box clRetainedMonthlyUpperStackBox = na
+var box clRetainedMonthlyLowerStackBox = na
+var box clRetainedUpperH1GapBox = na
+var box clRetainedLowerH1GapBox = na
+var box clRetainedUpperFourHourBreakoutBox = na
+var box clRetainedLowerFourHourBreakoutBox = na
+
 var box[] clUpperStackFillBoxes = array.new_box()
 var box[] clLowerStackFillBoxes = array.new_box()
 var box[] clWeeklyUpperStackFillBoxes = array.new_box()
@@ -1052,6 +1097,9 @@ var label clClosed4HLowAnchorLabel = na
 clUpperBreakoutBg = color.new(clUpperBreakoutFillColor, clBreakoutFillTransparency)
 clLowerBreakoutBg = color.new(clLowerBreakoutFillColor, clBreakoutFillTransparency)
 clBreakoutBorder = color.new(clBreakoutBorderColor, clBreakoutBorderTransparency)
+clRetainedUpperBreakoutBg = color.new(clUpperBreakoutFillColor, math.min(clBreakoutFillTransparency + 6, 100))
+clRetainedLowerBreakoutBg = color.new(clLowerBreakoutFillColor, math.min(clBreakoutFillTransparency + 6, 100))
+clRetainedBreakoutBorder = color.new(clBreakoutBorderColor, math.min(clBreakoutBorderTransparency + 8, 100))
 clStackUpperBg = clUpperBreakoutBg
 clStackLowerBg = clLowerBreakoutBg
 clStackBorder = clBreakoutBorder
@@ -1085,6 +1133,12 @@ clExtendStackZonesRight = clExtendBreakoutZonesRight
 clExtendWeeklyDailyStackZonesRight = clExtendBreakoutZonesRight
 clExtendMonthlyDailyStackZonesRight = clExtendBreakoutZonesRight
 clExtendH1GapsRight = clExtendBreakoutZonesRight
+
+clKeepClearedHourlyActive = clKeepClearedBreakoutZones and clKeepClearedHourlyZones and clBreakoutRenderAllowed and clShowHourlyBreakoutZone
+clKeepClearedFourHourActive = clKeepClearedBreakoutZones and clKeepClearedFourHourZones and clBreakoutRenderAllowed and clShowFourHourBreakoutZone
+clKeepClearedDailyActive = clKeepClearedBreakoutZones and clKeepClearedDailyZones and clBreakoutRenderAllowed and clShowDailyBreakoutZone
+clKeepClearedWeeklyActive = clKeepClearedBreakoutZones and clKeepClearedWeeklyZones and clBreakoutRenderAllowed and clShowWeeklyBreakoutZone
+clKeepClearedMonthlyActive = clKeepClearedBreakoutZones and clKeepClearedMonthlyZones and clBreakoutRenderAllowed and clShowMonthlyBreakoutZone
 
 var string clLastBreakoutZoneDisplayMode = clBreakoutZoneDisplayMode
 if clBreakoutZoneDisplayMode != clLastBreakoutZoneDisplayMode
@@ -1228,6 +1282,68 @@ clUpperH1GapFittedExtensionBox := f_update_fitted_breakout_extension_box(clUpper
 clLowerH1GapFittedExtensionBox := f_update_fitted_breakout_extension_box(clLowerH1GapFittedExtensionBox, h1LowerFittedVisible and clFittedExtensionVisible, clZoneRightTime, clFittedExtensionRightTime, clPreviousHourLow, h1LowerFittedTop, false, clH1LowerBg)
 clUpperFourHourBreakoutFittedExtensionBox := f_update_fitted_breakout_extension_box(clUpperFourHourBreakoutFittedExtensionBox, fourHourUpperFittedVisible and clFittedExtensionVisible, clZoneRightTime, clFittedExtensionRightTime, clLatestClosed4HHigh, fourHourUpperFittedBottom, true, clUpperBreakoutBg)
 clLowerFourHourBreakoutFittedExtensionBox := f_update_fitted_breakout_extension_box(clLowerFourHourBreakoutFittedExtensionBox, fourHourLowerFittedVisible and clFittedExtensionVisible, clZoneRightTime, clFittedExtensionRightTime, clLatestClosed4HLow, fourHourLowerFittedTop, false, clLowerBreakoutBg)
+
+clHourlyAnchorChanged = nz(ta.change(clPreviousHourStartTime), 0) != 0
+clFourHourUpperAnchorChanged = nz(ta.change(clLatestClosed4HHighTime), 0) != 0
+clFourHourLowerAnchorChanged = nz(ta.change(clLatestClosed4HLowTime), 0) != 0
+clDailyUpperAnchorChanged = nz(ta.change(clPreviousDayHighTime), 0) != 0
+clDailyLowerAnchorChanged = nz(ta.change(clPreviousDayLowTime), 0) != 0
+clWeeklyUpperAnchorChanged = nz(ta.change(clPreviousWeekHighTime), 0) != 0
+clWeeklyLowerAnchorChanged = nz(ta.change(clPreviousWeekLowTime), 0) != 0
+clMonthlyUpperAnchorChanged = nz(ta.change(clPreviousMonthHighTime), 0) != 0
+clMonthlyLowerAnchorChanged = nz(ta.change(clPreviousMonthLowTime), 0) != 0
+
+if not clKeepClearedHourlyActive or clHourlyAnchorChanged
+    clRetainedUpperH1GapBox := f_delete_zone_box(clRetainedUpperH1GapBox)
+    clRetainedLowerH1GapBox := f_delete_zone_box(clRetainedLowerH1GapBox)
+if not clKeepClearedFourHourActive or clFourHourUpperAnchorChanged
+    clRetainedUpperFourHourBreakoutBox := f_delete_zone_box(clRetainedUpperFourHourBreakoutBox)
+if not clKeepClearedFourHourActive or clFourHourLowerAnchorChanged
+    clRetainedLowerFourHourBreakoutBox := f_delete_zone_box(clRetainedLowerFourHourBreakoutBox)
+if not clKeepClearedDailyActive or clDailyUpperAnchorChanged
+    clRetainedUpperStackBox := f_delete_zone_box(clRetainedUpperStackBox)
+if not clKeepClearedDailyActive or clDailyLowerAnchorChanged
+    clRetainedLowerStackBox := f_delete_zone_box(clRetainedLowerStackBox)
+if not clKeepClearedWeeklyActive or clWeeklyUpperAnchorChanged
+    clRetainedWeeklyUpperStackBox := f_delete_zone_box(clRetainedWeeklyUpperStackBox)
+if not clKeepClearedWeeklyActive or clWeeklyLowerAnchorChanged
+    clRetainedWeeklyLowerStackBox := f_delete_zone_box(clRetainedWeeklyLowerStackBox)
+if not clKeepClearedMonthlyActive or clMonthlyUpperAnchorChanged
+    clRetainedMonthlyUpperStackBox := f_delete_zone_box(clRetainedMonthlyUpperStackBox)
+if not clKeepClearedMonthlyActive or clMonthlyLowerAnchorChanged
+    clRetainedMonthlyLowerStackBox := f_delete_zone_box(clRetainedMonthlyLowerStackBox)
+
+upperStackCleared = clKeepClearedDailyActive and not clDailyUpperAnchorChanged and nz(upperStackActive[1], false) and not upperStackActive and (clPrevDayHighTakenToday or (clUpperStackDataReady and clLatestClosed4HHigh >= clPreviousDayHigh))
+lowerStackCleared = clKeepClearedDailyActive and not clDailyLowerAnchorChanged and nz(lowerStackActive[1], false) and not lowerStackActive and (clPrevDayLowTakenToday or (clLowerStackDataReady and clLatestClosed4HLow <= clPreviousDayLow))
+weeklyUpperStackCleared = clKeepClearedWeeklyActive and not clWeeklyUpperAnchorChanged and nz(weeklyUpperStackActive[1], false) and not weeklyUpperStackActive and (clPrevWeekHighTakenThisWeek or (weeklyUpperStackDataReady and clLatestClosedDailyHigh >= clPreviousWeekHigh))
+weeklyLowerStackCleared = clKeepClearedWeeklyActive and not clWeeklyLowerAnchorChanged and nz(weeklyLowerStackActive[1], false) and not weeklyLowerStackActive and (clPrevWeekLowTakenThisWeek or (weeklyLowerStackDataReady and clLatestClosedDailyLow <= clPreviousWeekLow))
+monthlyUpperStackCleared = clKeepClearedMonthlyActive and not clMonthlyUpperAnchorChanged and nz(monthlyUpperStackActive[1], false) and not monthlyUpperStackActive and (clPrevMonthHighTakenThisMonth or (monthlyUpperStackDataReady and clLatestClosedDailyHigh >= clPreviousMonthHigh))
+monthlyLowerStackCleared = clKeepClearedMonthlyActive and not clMonthlyLowerAnchorChanged and nz(monthlyLowerStackActive[1], false) and not monthlyLowerStackActive and (clPrevMonthLowTakenThisMonth or (monthlyLowerStackDataReady and clLatestClosedDailyLow <= clPreviousMonthLow))
+h1UpperGapCleared = clKeepClearedHourlyActive and not clHourlyAnchorChanged and nz(clUpperH1GapVisible[1], false) and not clUpperH1GapVisible and not na(clCurrentHourHigh) and not na(clPreviousHourHigh) and clCurrentHourHigh >= clPreviousHourHigh
+h1LowerGapCleared = clKeepClearedHourlyActive and not clHourlyAnchorChanged and nz(clLowerH1GapVisible[1], false) and not clLowerH1GapVisible and not na(clCurrentHourLow) and not na(clPreviousHourLow) and clCurrentHourLow <= clPreviousHourLow
+fourHourUpperBreakoutCleared = clKeepClearedFourHourActive and not clFourHourUpperAnchorChanged and nz(clUpperFourHourBreakoutVisible[1], false) and not clUpperFourHourBreakoutVisible and fourHourUpperBreakoutDataReady and clCur4HHigh >= clLatestClosed4HHigh
+fourHourLowerBreakoutCleared = clKeepClearedFourHourActive and not clFourHourLowerAnchorChanged and nz(clLowerFourHourBreakoutVisible[1], false) and not clLowerFourHourBreakoutVisible and fourHourLowerBreakoutDataReady and clCur4HLow <= clLatestClosed4HLow
+
+if upperStackCleared
+    clRetainedUpperStackBox := f_update_retained_zone_box(clRetainedUpperStackBox, true, upperStackLeftTime[1], clZoneRightTime, clBreakoutZoneFittedMode ? clPreviousDayHigh[1] : upperStackTop[1], clBreakoutZoneFittedMode ? upperStackFittedBottom[1] : upperStackBottom[1], clRetainedUpperBreakoutBg, clRetainedBreakoutBorder, clStackBorderWidth)
+if lowerStackCleared
+    clRetainedLowerStackBox := f_update_retained_zone_box(clRetainedLowerStackBox, true, lowerStackLeftTime[1], clZoneRightTime, clBreakoutZoneFittedMode ? lowerStackFittedTop[1] : lowerStackTop[1], clBreakoutZoneFittedMode ? clPreviousDayLow[1] : lowerStackBottom[1], clRetainedLowerBreakoutBg, clRetainedBreakoutBorder, clStackBorderWidth)
+if weeklyUpperStackCleared
+    clRetainedWeeklyUpperStackBox := f_update_retained_zone_box(clRetainedWeeklyUpperStackBox, true, weeklyUpperLeftTime[1], clZoneRightTime, clBreakoutZoneFittedMode ? clPreviousWeekHigh[1] : weeklyUpperStackTop[1], clBreakoutZoneFittedMode ? weeklyUpperFittedBottom[1] : weeklyUpperStackBottom[1], clRetainedUpperBreakoutBg, clRetainedBreakoutBorder, clWeeklyDailyStackBorderWidth)
+if weeklyLowerStackCleared
+    clRetainedWeeklyLowerStackBox := f_update_retained_zone_box(clRetainedWeeklyLowerStackBox, true, weeklyLowerLeftTime[1], clZoneRightTime, clBreakoutZoneFittedMode ? weeklyLowerFittedTop[1] : weeklyLowerStackTop[1], clBreakoutZoneFittedMode ? clPreviousWeekLow[1] : weeklyLowerStackBottom[1], clRetainedLowerBreakoutBg, clRetainedBreakoutBorder, clWeeklyDailyStackBorderWidth)
+if monthlyUpperStackCleared
+    clRetainedMonthlyUpperStackBox := f_update_retained_zone_box(clRetainedMonthlyUpperStackBox, true, monthlyUpperLeftTime[1], clZoneRightTime, clBreakoutZoneFittedMode ? clPreviousMonthHigh[1] : monthlyUpperStackTop[1], clBreakoutZoneFittedMode ? monthlyUpperFittedBottom[1] : monthlyUpperStackBottom[1], clRetainedUpperBreakoutBg, clRetainedBreakoutBorder, clMonthlyDailyStackBorderWidth)
+if monthlyLowerStackCleared
+    clRetainedMonthlyLowerStackBox := f_update_retained_zone_box(clRetainedMonthlyLowerStackBox, true, monthlyLowerLeftTime[1], clZoneRightTime, clBreakoutZoneFittedMode ? monthlyLowerFittedTop[1] : monthlyLowerStackTop[1], clBreakoutZoneFittedMode ? clPreviousMonthLow[1] : monthlyLowerStackBottom[1], clRetainedLowerBreakoutBg, clRetainedBreakoutBorder, clMonthlyDailyStackBorderWidth)
+if h1UpperGapCleared
+    clRetainedUpperH1GapBox := f_update_retained_zone_box(clRetainedUpperH1GapBox, true, clH1GapLeftTime[1], clZoneRightTime, clBreakoutZoneFittedMode ? clPreviousHourHigh[1] : h1UpperGapTop[1], clBreakoutZoneFittedMode ? h1UpperFittedBottom[1] : h1UpperGapBottom[1], clRetainedUpperBreakoutBg, clRetainedBreakoutBorder, clH1GapBorderWidth)
+if h1LowerGapCleared
+    clRetainedLowerH1GapBox := f_update_retained_zone_box(clRetainedLowerH1GapBox, true, clH1GapLeftTime[1], clZoneRightTime, clBreakoutZoneFittedMode ? h1LowerFittedTop[1] : h1LowerGapTop[1], clBreakoutZoneFittedMode ? clPreviousHourLow[1] : h1LowerGapBottom[1], clRetainedLowerBreakoutBg, clRetainedBreakoutBorder, clH1GapBorderWidth)
+if fourHourUpperBreakoutCleared
+    clRetainedUpperFourHourBreakoutBox := f_update_retained_zone_box(clRetainedUpperFourHourBreakoutBox, true, clFourHourBreakoutLeftTime[1], clZoneRightTime, clBreakoutZoneFittedMode ? clLatestClosed4HHigh[1] : fourHourUpperBreakoutTop[1], clBreakoutZoneFittedMode ? fourHourUpperFittedBottom[1] : fourHourUpperBreakoutBottom[1], clRetainedUpperBreakoutBg, clRetainedBreakoutBorder, clBreakoutBorderWidth)
+if fourHourLowerBreakoutCleared
+    clRetainedLowerFourHourBreakoutBox := f_update_retained_zone_box(clRetainedLowerFourHourBreakoutBox, true, clFourHourBreakoutLeftTime[1], clZoneRightTime, clBreakoutZoneFittedMode ? fourHourLowerFittedTop[1] : fourHourLowerBreakoutTop[1], clBreakoutZoneFittedMode ? clLatestClosed4HLow[1] : fourHourLowerBreakoutBottom[1], clRetainedLowerBreakoutBg, clRetainedBreakoutBorder, clBreakoutBorderWidth)
 
 if upperStackActive
     if clBreakoutZoneFittedMode
