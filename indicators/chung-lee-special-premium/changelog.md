@@ -1,5 +1,9 @@
 # Changelog
 
+## 2026-05-28
+
+- `2026-05-28-break-zone-label-distance-fix`: Changed all Hourly, Four Hour, Daily, Weekly, and Monthly breakout points labels to measure the shaded zone height from the zone boundary prices instead of from live price, and updated the label text to `{points} pts till {timeframe} break`.
+
 ## 2026-05-27
 
 - `2026-05-27-breakout-one-sided-candle-fill-fix`: Corrected Fill Between Candles breakout zones so upper fills use the candle high as the lower edge and shade upward only, while lower fills use the candle low as the upper edge and shade downward only.
