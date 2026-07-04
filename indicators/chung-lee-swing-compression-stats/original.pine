@@ -1,0 +1,493 @@
+//@version=5
+indicator(title="Chung Lee Swing + Compression Stats", shorttitle="CL Swing + Compression Stats", overlay=false, max_bars_back=5000)
+
+// This script measures completed swing legs, completed compression periods,
+// and simple post-compression expansion using a table only.
+
+groupGeneral = "01 General"
+groupSwing = "02 Swing Legs"
+groupCompression = "03 Compression"
+groupTable = "04 Dashboard"
+
+stopAtPreviousDailyClose = input.bool(true, "Stop analysis at previous daily close", group=groupGeneral, tooltip="When enabled, bars from the latest chart day are excluded from the stats.")
+tablePositionInput = input.string("Top Right", "Table position", options=["Top Right", "Top Left", "Bottom Right", "Bottom Left"], group=groupTable)
+
+swingDetectionMode = input.string("ATR Multiple", "Swing detection mode", options=["ATR Multiple", "Fixed Points"], group=groupSwing)
+atrLength = input.int(14, "ATR length", minval=1, group=groupSwing)
+atrReversalMultiplier = input.float(1.0, "ATR reversal multiplier", minval=0.1, step=0.1, group=groupSwing)
+fixedReversalThreshold = input.float(10.0, "Fixed reversal threshold", minval=0.0, step=0.25, group=groupSwing)
+maxStoredSamples = input.int(500, "Max stored samples", minval=50, maxval=2000, group=groupSwing)
+
+compressionLookbackBars = input.int(12, "Compression lookback bars", minval=2, group=groupCompression)
+compressionRangeThresholdAtrMultiple = input.float(0.75, "Compression range threshold ATR multiple", minval=0.1, step=0.05, group=groupCompression)
+minimumCompressionBars = input.int(6, "Minimum compression bars", minval=2, group=groupCompression)
+postCompressionMaxBars = input.int(24, "Post-compression max bars", minval=1, group=groupCompression)
+
+f_table_position(string _position) =>
+    _position == "Top Left" ? position.top_left :
+     _position == "Bottom Right" ? position.bottom_right :
+     _position == "Bottom Left" ? position.bottom_left : position.top_right
+
+f_round_to_tick(float _value) =>
+    math.round(_value / syminfo.mintick) * syminfo.mintick
+
+f_format_points(float _value) =>
+    na(_value) ? "n/a" : str.tostring(f_round_to_tick(_value), format.mintick)
+
+f_format_duration(float _barsValue, float _minutesValue) =>
+    if na(_barsValue)
+        "n/a"
+    else
+        _barsText = str.tostring(_barsValue, "#.##") + "b"
+        not na(_minutesValue) ? _barsText + " / " + str.tostring(_minutesValue, "#.##") + "m" : _barsText
+
+f_quality_status(int _sampleCount) =>
+    _sampleCount < 30 ? "Weak" : _sampleCount < 100 ? "Decent" : "Strong"
+
+f_minutes_from_bars(float _barsValue, float _timeframeMinutes) =>
+    not na(_barsValue) and not na(_timeframeMinutes) ? _barsValue * _timeframeMinutes : na
+
+f_push_trim_float(float[] _values, float _value, int _maxSize) =>
+    if not na(_value)
+        array.push(_values, _value)
+        while array.size(_values) > _maxSize
+            array.shift(_values)
+
+f_push_trim_int(int[] _values, int _value, int _maxSize) =>
+    array.push(_values, _value)
+    while array.size(_values) > _maxSize
+        array.shift(_values)
+
+f_average(float[] _values) =>
+    _size = array.size(_values)
+    if _size == 0
+        na
+    else
+        _total = 0.0
+        for _index = 0 to _size - 1
+            _total += array.get(_values, _index)
+        _total / _size
+
+f_percentile(float[] _values, float _percentile) =>
+    _size = array.size(_values)
+    if _size == 0
+        na
+    else
+        float[] _sorted = array.copy(_values)
+        array.sort(_sorted, order.ascending)
+        _clampedPercentile = math.max(0.0, math.min(_percentile, 100.0))
+        _rank = (_clampedPercentile / 100.0) * (_size - 1)
+        _lowerIndex = int(math.floor(_rank))
+        _upperIndex = int(math.ceil(_rank))
+        _lowerValue = array.get(_sorted, _lowerIndex)
+        _upperValue = array.get(_sorted, _upperIndex)
+        _lowerIndex == _upperIndex ? _lowerValue : _lowerValue + (_upperValue - _lowerValue) * (_rank - _lowerIndex)
+
+f_count_direction(int[] _directions, int _direction) =>
+    _count = 0
+    _size = array.size(_directions)
+    if _size > 0
+        for _index = 0 to _size - 1
+            if array.get(_directions, _index) == _direction
+                _count += 1
+    _count
+
+atrValue = ta.atr(atrLength)
+timeframeSeconds = timeframe.in_seconds(timeframe.period)
+timeframeMinutes = not na(timeframeSeconds) and timeframeSeconds > 0 ? timeframeSeconds / 60.0 : na
+canEstimateMinutes = not na(timeframeMinutes)
+latestChartDayStart = timestamp(syminfo.timezone, year(last_bar_time), month(last_bar_time), dayofmonth(last_bar_time), 0, 0)
+analysisBarAllowed = barstate.isconfirmed and (not stopAtPreviousDailyClose or time < latestChartDayStart)
+
+rawSwingThreshold = swingDetectionMode == "ATR Multiple" ? atrValue * atrReversalMultiplier : fixedReversalThreshold
+reversalThreshold = not na(rawSwingThreshold) ? math.max(syminfo.mintick, rawSwingThreshold) : na
+
+rollingCompressionHigh = ta.highest(high, compressionLookbackBars)
+rollingCompressionLow = ta.lowest(low, compressionLookbackBars)
+rollingCompressionRange = rollingCompressionHigh - rollingCompressionLow
+tightCompressionBar = analysisBarAllowed and not na(atrValue) and not na(rollingCompressionRange) and rollingCompressionRange <= atrValue * compressionRangeThresholdAtrMultiple
+
+var float[] upLegPoints = array.new_float()
+var float[] upLegAtrMultiples = array.new_float()
+var float[] upLegDurationBars = array.new_float()
+var float[] upLegDurationMinutes = array.new_float()
+
+var float[] downLegPoints = array.new_float()
+var float[] downLegAtrMultiples = array.new_float()
+var float[] downLegDurationBars = array.new_float()
+var float[] downLegDurationMinutes = array.new_float()
+
+var float[] compressionDurationBars = array.new_float()
+var float[] compressionDurationMinutes = array.new_float()
+var float[] compressionRangePoints = array.new_float()
+var float[] compressionRangeAtrMultiples = array.new_float()
+
+var float[] postCompressionExpansionPoints = array.new_float()
+var int[] postCompressionDirections = array.new_int()
+
+var int barsAnalyzed = 0
+
+var bool swingInitialized = false
+var int swingDirection = 0
+var float swingPivotPrice = na
+var int swingPivotBar = na
+var float swingExtremePrice = na
+var int swingExtremeBar = na
+var float swingExtremeAtr = na
+
+var int tightCompressionStreak = 0
+var bool compressionActive = false
+var int compressionStartBar = na
+var int compressionBarCount = 0
+var float compressionTop = na
+var float compressionBottom = na
+var float compressionAtrReference = na
+
+var bool postCompressionActive = false
+var int postCompressionStartBar = na
+var float postCompressionRangeTop = na
+var float postCompressionRangeBottom = na
+var float postCompressionMaxUpside = 0.0
+var float postCompressionMaxDownside = 0.0
+
+if analysisBarAllowed
+    barsAnalyzed += 1
+
+    if not na(reversalThreshold)
+        if not swingInitialized
+            swingInitialized := true
+            swingPivotPrice := close
+            swingPivotBar := bar_index
+            swingExtremePrice := close
+            swingExtremeBar := bar_index
+            swingExtremeAtr := atrValue
+        else
+            if swingDirection == 0
+                upMoveFromPivot = high - swingPivotPrice
+                downMoveFromPivot = swingPivotPrice - low
+
+                if upMoveFromPivot >= reversalThreshold and upMoveFromPivot >= downMoveFromPivot
+                    swingDirection := 1
+                    swingExtremePrice := high
+                    swingExtremeBar := bar_index
+                    swingExtremeAtr := atrValue
+                else if downMoveFromPivot >= reversalThreshold
+                    swingDirection := -1
+                    swingExtremePrice := low
+                    swingExtremeBar := bar_index
+                    swingExtremeAtr := atrValue
+            else if swingDirection == 1
+                if high >= swingExtremePrice
+                    swingExtremePrice := high
+                    swingExtremeBar := bar_index
+                    swingExtremeAtr := atrValue
+
+                if swingExtremePrice - low >= reversalThreshold
+                    completedLegPoints = swingExtremePrice - swingPivotPrice
+                    completedLegBars = math.max(1, swingExtremeBar - swingPivotBar)
+                    completedLegMinutes = f_minutes_from_bars(completedLegBars, timeframeMinutes)
+                    completedLegAtrMultiple = not na(swingExtremeAtr) and swingExtremeAtr > 0 ? completedLegPoints / swingExtremeAtr : na
+
+                    if completedLegPoints > 0
+                        f_push_trim_float(upLegPoints, completedLegPoints, maxStoredSamples)
+                        f_push_trim_float(upLegAtrMultiples, completedLegAtrMultiple, maxStoredSamples)
+                        f_push_trim_float(upLegDurationBars, completedLegBars, maxStoredSamples)
+                        f_push_trim_float(upLegDurationMinutes, completedLegMinutes, maxStoredSamples)
+
+                    swingPivotPrice := swingExtremePrice
+                    swingPivotBar := swingExtremeBar
+                    swingDirection := -1
+                    swingExtremePrice := low
+                    swingExtremeBar := bar_index
+                    swingExtremeAtr := atrValue
+            else
+                if low <= swingExtremePrice
+                    swingExtremePrice := low
+                    swingExtremeBar := bar_index
+                    swingExtremeAtr := atrValue
+
+                if high - swingExtremePrice >= reversalThreshold
+                    completedLegPoints = swingPivotPrice - swingExtremePrice
+                    completedLegBars = math.max(1, swingExtremeBar - swingPivotBar)
+                    completedLegMinutes = f_minutes_from_bars(completedLegBars, timeframeMinutes)
+                    completedLegAtrMultiple = not na(swingExtremeAtr) and swingExtremeAtr > 0 ? completedLegPoints / swingExtremeAtr : na
+
+                    if completedLegPoints > 0
+                        f_push_trim_float(downLegPoints, completedLegPoints, maxStoredSamples)
+                        f_push_trim_float(downLegAtrMultiples, completedLegAtrMultiple, maxStoredSamples)
+                        f_push_trim_float(downLegDurationBars, completedLegBars, maxStoredSamples)
+                        f_push_trim_float(downLegDurationMinutes, completedLegMinutes, maxStoredSamples)
+
+                    swingPivotPrice := swingExtremePrice
+                    swingPivotBar := swingExtremeBar
+                    swingDirection := 1
+                    swingExtremePrice := high
+                    swingExtremeBar := bar_index
+                    swingExtremeAtr := atrValue
+
+    if tightCompressionBar
+        tightCompressionStreak += 1
+
+        if compressionActive
+            compressionTop := math.max(compressionTop, high)
+            compressionBottom := math.min(compressionBottom, low)
+            compressionBarCount := bar_index - compressionStartBar + 1
+            compressionAtrReference := atrValue
+        else if tightCompressionStreak >= minimumCompressionBars
+            compressionActive := true
+            compressionStartBar := bar_index - minimumCompressionBars + 1
+            compressionBarCount := minimumCompressionBars
+            compressionTop := ta.highest(high, minimumCompressionBars)
+            compressionBottom := ta.lowest(low, minimumCompressionBars)
+            compressionAtrReference := atrValue
+    else
+        tightCompressionStreak := 0
+
+        if compressionActive
+            completedCompressionBars = compressionBarCount
+            completedCompressionMinutes = f_minutes_from_bars(completedCompressionBars, timeframeMinutes)
+            completedCompressionRange = compressionTop - compressionBottom
+            completedCompressionAtrMultiple = not na(compressionAtrReference) and compressionAtrReference > 0 ? completedCompressionRange / compressionAtrReference : na
+
+            if completedCompressionBars >= minimumCompressionBars and completedCompressionRange >= 0
+                f_push_trim_float(compressionDurationBars, completedCompressionBars, maxStoredSamples)
+                f_push_trim_float(compressionDurationMinutes, completedCompressionMinutes, maxStoredSamples)
+                f_push_trim_float(compressionRangePoints, completedCompressionRange, maxStoredSamples)
+                f_push_trim_float(compressionRangeAtrMultiples, completedCompressionAtrMultiple, maxStoredSamples)
+
+                if postCompressionActive
+                    existingExpansion = math.max(postCompressionMaxUpside, postCompressionMaxDownside)
+                    existingDirection = postCompressionMaxUpside > postCompressionMaxDownside ? 1 : postCompressionMaxDownside > postCompressionMaxUpside ? -1 : 0
+                    if existingExpansion > 0
+                        f_push_trim_float(postCompressionExpansionPoints, existingExpansion, maxStoredSamples)
+                        f_push_trim_int(postCompressionDirections, existingDirection, maxStoredSamples)
+
+                postCompressionActive := true
+                postCompressionStartBar := bar_index
+                postCompressionRangeTop := compressionTop
+                postCompressionRangeBottom := compressionBottom
+                postCompressionMaxUpside := 0.0
+                postCompressionMaxDownside := 0.0
+
+            compressionActive := false
+            compressionStartBar := na
+            compressionBarCount := 0
+            compressionTop := na
+            compressionBottom := na
+            compressionAtrReference := na
+
+    if postCompressionActive
+        currentUpsideExpansion = math.max(0.0, high - postCompressionRangeTop)
+        currentDownsideExpansion = math.max(0.0, postCompressionRangeBottom - low)
+        postCompressionMaxUpside := math.max(postCompressionMaxUpside, currentUpsideExpansion)
+        postCompressionMaxDownside := math.max(postCompressionMaxDownside, currentDownsideExpansion)
+
+        postCompressionBarsElapsed = bar_index - postCompressionStartBar + 1
+        if postCompressionBarsElapsed >= postCompressionMaxBars
+            completedExpansion = math.max(postCompressionMaxUpside, postCompressionMaxDownside)
+            completedDirection = postCompressionMaxUpside > postCompressionMaxDownside ? 1 : postCompressionMaxDownside > postCompressionMaxUpside ? -1 : 0
+
+            if completedExpansion > 0
+                f_push_trim_float(postCompressionExpansionPoints, completedExpansion, maxStoredSamples)
+                f_push_trim_int(postCompressionDirections, completedDirection, maxStoredSamples)
+
+            postCompressionActive := false
+            postCompressionStartBar := na
+            postCompressionRangeTop := na
+            postCompressionRangeBottom := na
+            postCompressionMaxUpside := 0.0
+            postCompressionMaxDownside := 0.0
+
+var table statsTable = table.new(position.top_right, 3, 32, bgcolor=color.new(color.black, 10), frame_color=color.new(color.gray, 30), frame_width=1, border_color=color.new(color.gray, 45), border_width=1)
+
+if barstate.islast
+    upLegCount = array.size(upLegPoints)
+    downLegCount = array.size(downLegPoints)
+    compressionCount = array.size(compressionDurationBars)
+    postCompressionCount = array.size(postCompressionExpansionPoints)
+    postCompressionUpsideCount = f_count_direction(postCompressionDirections, 1)
+    postCompressionDownsideCount = f_count_direction(postCompressionDirections, -1)
+    qualitySampleBase = math.min(math.min(upLegCount, downLegCount), math.min(compressionCount, postCompressionCount))
+
+    upDistanceMedian = f_percentile(upLegPoints, 50)
+    upDistanceAverage = f_average(upLegPoints)
+    upDistance75 = f_percentile(upLegPoints, 75)
+    upDistance90 = f_percentile(upLegPoints, 90)
+    upDistance95 = f_percentile(upLegPoints, 95)
+    upDistanceMax = f_percentile(upLegPoints, 100)
+
+    downDistanceMedian = f_percentile(downLegPoints, 50)
+    downDistanceAverage = f_average(downLegPoints)
+    downDistance75 = f_percentile(downLegPoints, 75)
+    downDistance90 = f_percentile(downLegPoints, 90)
+    downDistance95 = f_percentile(downLegPoints, 95)
+    downDistanceMax = f_percentile(downLegPoints, 100)
+
+    upDurationMedianBars = f_percentile(upLegDurationBars, 50)
+    upDuration75Bars = f_percentile(upLegDurationBars, 75)
+    upDuration90Bars = f_percentile(upLegDurationBars, 90)
+    upDurationMedianMinutes = f_percentile(upLegDurationMinutes, 50)
+    upDuration75Minutes = f_percentile(upLegDurationMinutes, 75)
+    upDuration90Minutes = f_percentile(upLegDurationMinutes, 90)
+
+    downDurationMedianBars = f_percentile(downLegDurationBars, 50)
+    downDuration75Bars = f_percentile(downLegDurationBars, 75)
+    downDuration90Bars = f_percentile(downLegDurationBars, 90)
+    downDurationMedianMinutes = f_percentile(downLegDurationMinutes, 50)
+    downDuration75Minutes = f_percentile(downLegDurationMinutes, 75)
+    downDuration90Minutes = f_percentile(downLegDurationMinutes, 90)
+
+    compressionDurationMedianBars = f_percentile(compressionDurationBars, 50)
+    compressionDuration75Bars = f_percentile(compressionDurationBars, 75)
+    compressionDuration90Bars = f_percentile(compressionDurationBars, 90)
+    compressionDurationMedianMinutes = f_percentile(compressionDurationMinutes, 50)
+    compressionDuration75Minutes = f_percentile(compressionDurationMinutes, 75)
+    compressionDuration90Minutes = f_percentile(compressionDurationMinutes, 90)
+    compressionRangeMedian = f_percentile(compressionRangePoints, 50)
+    compressionRange75 = f_percentile(compressionRangePoints, 75)
+    compressionRange90 = f_percentile(compressionRangePoints, 90)
+
+    postExpansionMedian = f_percentile(postCompressionExpansionPoints, 50)
+    postExpansion75 = f_percentile(postCompressionExpansionPoints, 75)
+    postExpansion90 = f_percentile(postCompressionExpansionPoints, 90)
+
+    table.set_position(statsTable, f_table_position(tablePositionInput))
+
+    headerBg = color.new(#b89a28, 8)
+    sectionBg = color.new(#d9caa2, 78)
+    bodyBg = color.new(color.black, 10)
+    labelColor = color.white
+    valueColor = color.new(color.white, 0)
+
+    for row = 0 to 31
+        table.cell(statsTable, 0, row, "", text_color=labelColor, text_size=size.small, bgcolor=bodyBg)
+        table.cell(statsTable, 1, row, "", text_color=valueColor, text_size=size.small, bgcolor=bodyBg)
+        table.cell(statsTable, 2, row, "", text_color=valueColor, text_size=size.small, bgcolor=bodyBg)
+
+    table.cell(statsTable, 0, 0, "Chung Lee Swing + Compression Stats", text_color=color.black, text_size=size.small, bgcolor=headerBg)
+    table.cell(statsTable, 1, 0, str.upper(syminfo.ticker), text_color=color.black, text_size=size.small, bgcolor=headerBg)
+    table.cell(statsTable, 2, 0, timeframe.period, text_color=color.black, text_size=size.small, bgcolor=headerBg)
+
+    table.cell(statsTable, 0, 1, "Cutoff", text_color=labelColor, text_size=size.small, bgcolor=bodyBg)
+    table.cell(statsTable, 1, 1, stopAtPreviousDailyClose ? "Prev day only" : "All confirmed", text_color=valueColor, text_size=size.small, bgcolor=bodyBg)
+    table.cell(statsTable, 2, 1, "Bars " + str.tostring(barsAnalyzed), text_color=valueColor, text_size=size.small, bgcolor=bodyBg)
+
+    table.cell(statsTable, 0, 2, "Data Quality", text_color=color.black, text_size=size.small, bgcolor=sectionBg)
+    table.cell(statsTable, 1, 2, "Value", text_color=color.black, text_size=size.small, bgcolor=sectionBg)
+    table.cell(statsTable, 2, 2, "", text_color=color.black, text_size=size.small, bgcolor=sectionBg)
+
+    table.cell(statsTable, 0, 3, "Status", text_color=labelColor, text_size=size.small, bgcolor=bodyBg)
+    table.cell(statsTable, 1, 3, f_quality_status(qualitySampleBase), text_color=valueColor, text_size=size.small, bgcolor=bodyBg)
+    table.cell(statsTable, 2, 3, "Base " + str.tostring(qualitySampleBase), text_color=valueColor, text_size=size.small, bgcolor=bodyBg)
+
+    table.cell(statsTable, 0, 4, "Leg Samples", text_color=labelColor, text_size=size.small, bgcolor=bodyBg)
+    table.cell(statsTable, 1, 4, "Up " + str.tostring(upLegCount), text_color=valueColor, text_size=size.small, bgcolor=bodyBg)
+    table.cell(statsTable, 2, 4, "Down " + str.tostring(downLegCount), text_color=valueColor, text_size=size.small, bgcolor=bodyBg)
+
+    table.cell(statsTable, 0, 5, "Other Samples", text_color=labelColor, text_size=size.small, bgcolor=bodyBg)
+    table.cell(statsTable, 1, 5, "Comp " + str.tostring(compressionCount), text_color=valueColor, text_size=size.small, bgcolor=bodyBg)
+    table.cell(statsTable, 2, 5, "Post " + str.tostring(postCompressionCount), text_color=valueColor, text_size=size.small, bgcolor=bodyBg)
+
+    table.cell(statsTable, 0, 6, "Swing Distance", text_color=color.black, text_size=size.small, bgcolor=sectionBg)
+    table.cell(statsTable, 1, 6, "Up", text_color=color.black, text_size=size.small, bgcolor=sectionBg)
+    table.cell(statsTable, 2, 6, "Down", text_color=color.black, text_size=size.small, bgcolor=sectionBg)
+
+    table.cell(statsTable, 0, 7, "Count", text_color=labelColor, text_size=size.small, bgcolor=bodyBg)
+    table.cell(statsTable, 1, 7, str.tostring(upLegCount), text_color=valueColor, text_size=size.small, bgcolor=bodyBg)
+    table.cell(statsTable, 2, 7, str.tostring(downLegCount), text_color=valueColor, text_size=size.small, bgcolor=bodyBg)
+
+    table.cell(statsTable, 0, 8, "Median", text_color=labelColor, text_size=size.small, bgcolor=bodyBg)
+    table.cell(statsTable, 1, 8, f_format_points(upDistanceMedian), text_color=valueColor, text_size=size.small, bgcolor=bodyBg)
+    table.cell(statsTable, 2, 8, f_format_points(downDistanceMedian), text_color=valueColor, text_size=size.small, bgcolor=bodyBg)
+
+    table.cell(statsTable, 0, 9, "Average", text_color=labelColor, text_size=size.small, bgcolor=bodyBg)
+    table.cell(statsTable, 1, 9, f_format_points(upDistanceAverage), text_color=valueColor, text_size=size.small, bgcolor=bodyBg)
+    table.cell(statsTable, 2, 9, f_format_points(downDistanceAverage), text_color=valueColor, text_size=size.small, bgcolor=bodyBg)
+
+    table.cell(statsTable, 0, 10, "75%", text_color=labelColor, text_size=size.small, bgcolor=bodyBg)
+    table.cell(statsTable, 1, 10, f_format_points(upDistance75), text_color=valueColor, text_size=size.small, bgcolor=bodyBg)
+    table.cell(statsTable, 2, 10, f_format_points(downDistance75), text_color=valueColor, text_size=size.small, bgcolor=bodyBg)
+
+    table.cell(statsTable, 0, 11, "90%", text_color=labelColor, text_size=size.small, bgcolor=bodyBg)
+    table.cell(statsTable, 1, 11, f_format_points(upDistance90), text_color=valueColor, text_size=size.small, bgcolor=bodyBg)
+    table.cell(statsTable, 2, 11, f_format_points(downDistance90), text_color=valueColor, text_size=size.small, bgcolor=bodyBg)
+
+    table.cell(statsTable, 0, 12, "95%", text_color=labelColor, text_size=size.small, bgcolor=bodyBg)
+    table.cell(statsTable, 1, 12, f_format_points(upDistance95), text_color=valueColor, text_size=size.small, bgcolor=bodyBg)
+    table.cell(statsTable, 2, 12, f_format_points(downDistance95), text_color=valueColor, text_size=size.small, bgcolor=bodyBg)
+
+    table.cell(statsTable, 0, 13, "Max", text_color=labelColor, text_size=size.small, bgcolor=bodyBg)
+    table.cell(statsTable, 1, 13, f_format_points(upDistanceMax), text_color=valueColor, text_size=size.small, bgcolor=bodyBg)
+    table.cell(statsTable, 2, 13, f_format_points(downDistanceMax), text_color=valueColor, text_size=size.small, bgcolor=bodyBg)
+
+    table.cell(statsTable, 0, 14, "Swing Duration", text_color=color.black, text_size=size.small, bgcolor=sectionBg)
+    table.cell(statsTable, 1, 14, "Up", text_color=color.black, text_size=size.small, bgcolor=sectionBg)
+    table.cell(statsTable, 2, 14, "Down", text_color=color.black, text_size=size.small, bgcolor=sectionBg)
+
+    table.cell(statsTable, 0, 15, "Median", text_color=labelColor, text_size=size.small, bgcolor=bodyBg)
+    table.cell(statsTable, 1, 15, f_format_duration(upDurationMedianBars, upDurationMedianMinutes), text_color=valueColor, text_size=size.small, bgcolor=bodyBg)
+    table.cell(statsTable, 2, 15, f_format_duration(downDurationMedianBars, downDurationMedianMinutes), text_color=valueColor, text_size=size.small, bgcolor=bodyBg)
+
+    table.cell(statsTable, 0, 16, "75%", text_color=labelColor, text_size=size.small, bgcolor=bodyBg)
+    table.cell(statsTable, 1, 16, f_format_duration(upDuration75Bars, upDuration75Minutes), text_color=valueColor, text_size=size.small, bgcolor=bodyBg)
+    table.cell(statsTable, 2, 16, f_format_duration(downDuration75Bars, downDuration75Minutes), text_color=valueColor, text_size=size.small, bgcolor=bodyBg)
+
+    table.cell(statsTable, 0, 17, "90%", text_color=labelColor, text_size=size.small, bgcolor=bodyBg)
+    table.cell(statsTable, 1, 17, f_format_duration(upDuration90Bars, upDuration90Minutes), text_color=valueColor, text_size=size.small, bgcolor=bodyBg)
+    table.cell(statsTable, 2, 17, f_format_duration(downDuration90Bars, downDuration90Minutes), text_color=valueColor, text_size=size.small, bgcolor=bodyBg)
+
+    table.cell(statsTable, 0, 18, "Compression", text_color=color.black, text_size=size.small, bgcolor=sectionBg)
+    table.cell(statsTable, 1, 18, "Value", text_color=color.black, text_size=size.small, bgcolor=sectionBg)
+    table.cell(statsTable, 2, 18, "", text_color=color.black, text_size=size.small, bgcolor=sectionBg)
+
+    table.cell(statsTable, 0, 19, "Count", text_color=labelColor, text_size=size.small, bgcolor=bodyBg)
+    table.cell(statsTable, 1, 19, str.tostring(compressionCount), text_color=valueColor, text_size=size.small, bgcolor=bodyBg)
+    table.cell(statsTable, 2, 19, "", text_color=valueColor, text_size=size.small, bgcolor=bodyBg)
+
+    table.cell(statsTable, 0, 20, "Med Dur", text_color=labelColor, text_size=size.small, bgcolor=bodyBg)
+    table.cell(statsTable, 1, 20, f_format_duration(compressionDurationMedianBars, compressionDurationMedianMinutes), text_color=valueColor, text_size=size.small, bgcolor=bodyBg)
+    table.cell(statsTable, 2, 20, "", text_color=valueColor, text_size=size.small, bgcolor=bodyBg)
+
+    table.cell(statsTable, 0, 21, "75% Dur", text_color=labelColor, text_size=size.small, bgcolor=bodyBg)
+    table.cell(statsTable, 1, 21, f_format_duration(compressionDuration75Bars, compressionDuration75Minutes), text_color=valueColor, text_size=size.small, bgcolor=bodyBg)
+    table.cell(statsTable, 2, 21, "", text_color=valueColor, text_size=size.small, bgcolor=bodyBg)
+
+    table.cell(statsTable, 0, 22, "90% Dur", text_color=labelColor, text_size=size.small, bgcolor=bodyBg)
+    table.cell(statsTable, 1, 22, f_format_duration(compressionDuration90Bars, compressionDuration90Minutes), text_color=valueColor, text_size=size.small, bgcolor=bodyBg)
+    table.cell(statsTable, 2, 22, "", text_color=valueColor, text_size=size.small, bgcolor=bodyBg)
+
+    table.cell(statsTable, 0, 23, "Med Range", text_color=labelColor, text_size=size.small, bgcolor=bodyBg)
+    table.cell(statsTable, 1, 23, f_format_points(compressionRangeMedian), text_color=valueColor, text_size=size.small, bgcolor=bodyBg)
+    table.cell(statsTable, 2, 23, "", text_color=valueColor, text_size=size.small, bgcolor=bodyBg)
+
+    table.cell(statsTable, 0, 24, "75% Range", text_color=labelColor, text_size=size.small, bgcolor=bodyBg)
+    table.cell(statsTable, 1, 24, f_format_points(compressionRange75), text_color=valueColor, text_size=size.small, bgcolor=bodyBg)
+    table.cell(statsTable, 2, 24, "", text_color=valueColor, text_size=size.small, bgcolor=bodyBg)
+
+    table.cell(statsTable, 0, 25, "90% Range", text_color=labelColor, text_size=size.small, bgcolor=bodyBg)
+    table.cell(statsTable, 1, 25, f_format_points(compressionRange90), text_color=valueColor, text_size=size.small, bgcolor=bodyBg)
+    table.cell(statsTable, 2, 25, "", text_color=valueColor, text_size=size.small, bgcolor=bodyBg)
+
+    table.cell(statsTable, 0, 26, "Post-Compression", text_color=color.black, text_size=size.small, bgcolor=sectionBg)
+    table.cell(statsTable, 1, 26, "Value", text_color=color.black, text_size=size.small, bgcolor=sectionBg)
+    table.cell(statsTable, 2, 26, "", text_color=color.black, text_size=size.small, bgcolor=sectionBg)
+
+    table.cell(statsTable, 0, 27, "Count", text_color=labelColor, text_size=size.small, bgcolor=bodyBg)
+    table.cell(statsTable, 1, 27, str.tostring(postCompressionCount), text_color=valueColor, text_size=size.small, bgcolor=bodyBg)
+    table.cell(statsTable, 2, 27, "Up " + str.tostring(postCompressionUpsideCount) + " / Down " + str.tostring(postCompressionDownsideCount), text_color=valueColor, text_size=size.small, bgcolor=bodyBg)
+
+    table.cell(statsTable, 0, 28, "Median", text_color=labelColor, text_size=size.small, bgcolor=bodyBg)
+    table.cell(statsTable, 1, 28, f_format_points(postExpansionMedian), text_color=valueColor, text_size=size.small, bgcolor=bodyBg)
+    table.cell(statsTable, 2, 28, "", text_color=valueColor, text_size=size.small, bgcolor=bodyBg)
+
+    table.cell(statsTable, 0, 29, "75%", text_color=labelColor, text_size=size.small, bgcolor=bodyBg)
+    table.cell(statsTable, 1, 29, f_format_points(postExpansion75), text_color=valueColor, text_size=size.small, bgcolor=bodyBg)
+    table.cell(statsTable, 2, 29, "", text_color=valueColor, text_size=size.small, bgcolor=bodyBg)
+
+    table.cell(statsTable, 0, 30, "90%", text_color=labelColor, text_size=size.small, bgcolor=bodyBg)
+    table.cell(statsTable, 1, 30, f_format_points(postExpansion90), text_color=valueColor, text_size=size.small, bgcolor=bodyBg)
+    table.cell(statsTable, 2, 30, "", text_color=valueColor, text_size=size.small, bgcolor=bodyBg)
+
+    table.cell(statsTable, 0, 31, "Notes", text_color=labelColor, text_size=size.small, bgcolor=bodyBg)
+    table.cell(statsTable, 1, 31, "Table only", text_color=valueColor, text_size=size.small, bgcolor=bodyBg)
+    table.cell(statsTable, 2, 31, canEstimateMinutes ? "Minutes on" : "Bars only", text_color=valueColor, text_size=size.small, bgcolor=bodyBg)
