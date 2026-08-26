@@ -1,0 +1,382 @@
+//@version=6
+indicator(title = 'Breakout Calculator', shorttitle = 'BO Calc', overlay = true, max_bars_back = 5000, max_labels_count = 50, max_lines_count = 50)
+
+groupGeneral = 'General'
+pointSize = input.float(defval = 1.0, title = 'Point size', minval = 0.0000001, group = groupGeneral, tooltip = 'Use 1.0 for raw chart points. If you want ticks, set this to the symbol tick size.')
+statTz = input.string(defval = 'America/Los_Angeles', title = 'Time zone for 3pm / 7pm / 11pm / 3am filters', group = groupGeneral)
+
+groupStudy = 'Study'
+showAllTable = input.bool(defval = true, title = 'Show all-bars breakout table', group = groupStudy)
+show3pmTable = input.bool(defval = true, title = 'Show 3pm table', group = groupStudy)
+show7pmTable = input.bool(defval = true, title = 'Show 7pm table', group = groupStudy)
+show11pmTable = input.bool(defval = true, title = 'Show 11pm table', group = groupStudy)
+show3amTable = input.bool(defval = true, title = 'Show 3am table', group = groupStudy)
+show7amTable = input.bool(defval = true, title = 'Show 7am table', group = groupStudy)
+show11amTable = input.bool(defval = true, title = 'Show 11am table', group = groupStudy)
+showNightTable = input.bool(defval = true, title = 'Show 11pm / 3am combined table', group = groupStudy)
+lookbackBars = input.int(defval = 4999, title = 'Bars to study', minval = 50, maxval = 4999, group = groupStudy)
+excludeActiveBar = input.bool(defval = true, title = 'Exclude active/unclosed bar', group = groupStudy)
+
+headerBg = color.rgb(30, 25, 18)
+bodyBg = color.new(color.rgb(20, 20, 20), 8)
+bodyBg2 = color.new(color.rgb(31, 27, 20), 0)
+goldText = color.rgb(236, 186, 74)
+whiteText = color.rgb(245, 245, 245)
+mutedText = color.rgb(180, 175, 160)
+borderCol = color.new(color.rgb(199, 148, 49), 55)
+
+f_fmt(float x) =>
+    na(x) ? '-' : str.tostring(x, '#.##')
+f_fmt_pts(float x) =>
+    na(x) ? '-' : str.tostring(x, '#.##') + ' pts'
+f_count_pct(int n, int d) =>
+    d <= 0 ? str.tostring(n) + ' / -' : str.tostring(n) + ' / ' + str.tostring(float(n) / float(d) * 100.0, '#.##') + '%'
+f_cell(_table, _col, _row, _txt, _bg, _tc, _size) =>
+    table.cell(_table, _col, _row, _txt, bgcolor = _bg, text_color = _tc, text_size = _size)
+f_round_to_step(float x) =>
+    math.round(x / pointSize) * pointSize
+
+f_is_3_7_11_3(int t) =>
+    int h = hour(t, statTz)
+    int m = minute(t, statTz)
+    m == 0 and (h == 15 or h == 19 or h == 23 or h == 3)
+
+f_is_11_3(int t) =>
+    int h = hour(t, statTz)
+    int m = minute(t, statTz)
+    m == 0 and (h == 23 or h == 3)
+
+f_is_exact_hour(int t, int wantedHour) =>
+    int h = hour(t, statTz)
+    int m = minute(t, statTz)
+    m == 0 and h == wantedHour
+
+f_add(array<float> a, float v) =>
+    array.push(a, v)
+    if array.size(a) > lookbackBars
+        array.shift(a)
+
+f_mode(array<float> a) =>
+    int n = array.size(a)
+    float bestVal = na
+    int bestCount = 0
+    if n > 0
+        for i = 0 to n - 1 by 1
+            float v = array.get(a, i)
+            int c = 0
+            for j = 0 to n - 1 by 1
+                if array.get(a, j) == v
+                    c := c + 1
+                    c
+            if c > bestCount
+                bestCount := c
+                bestVal := v
+                bestVal
+    bestVal
+
+f_avg_from_sum(float sumVal, int countVal) =>
+    countVal > 0 ? sumVal / float(countVal) : na
+
+var array<int> sSamples = array.new_int(8, 0)
+var array<int> sInside = array.new_int(8, 0)
+var array<int> sUpOnly = array.new_int(8, 0)
+var array<int> sDownOnly = array.new_int(8, 0)
+var array<int> sBoth = array.new_int(8, 0)
+var array<float> sUpSum = array.new_float(8, 0.0)
+var array<float> sDownSum = array.new_float(8, 0.0)
+var array<float> sUpMax = array.new_float(8, 0.0)
+var array<float> sDownMax = array.new_float(8, 0.0)
+var array<float> sUpOnlySum = array.new_float(8, 0.0)
+var array<float> sDownOnlySum = array.new_float(8, 0.0)
+var array<float> sBothUpSum = array.new_float(8, 0.0)
+var array<float> sBothDownSum = array.new_float(8, 0.0)
+var array<float> sUpOnlyMax = array.new_float(8, 0.0)
+var array<float> sDownOnlyMax = array.new_float(8, 0.0)
+var array<float> sBothUpMax = array.new_float(8, 0.0)
+var array<float> sBothDownMax = array.new_float(8, 0.0)
+
+var array<float> sUpVals = array.new_float()
+var array<float> sDownVals = array.new_float()
+var array<float> sUpOnlyVals = array.new_float()
+var array<float> sDownOnlyVals = array.new_float()
+var array<float> sBothUpVals = array.new_float()
+var array<float> sBothDownVals = array.new_float()
+
+var array<float> sUpVals3pm = array.new_float()
+var array<float> sDownVals3pm = array.new_float()
+var array<float> sUpOnlyVals3pm = array.new_float()
+var array<float> sDownOnlyVals3pm = array.new_float()
+var array<float> sBothUpVals3pm = array.new_float()
+var array<float> sBothDownVals3pm = array.new_float()
+
+var array<float> sUpVals7pm = array.new_float()
+var array<float> sDownVals7pm = array.new_float()
+var array<float> sUpOnlyVals7pm = array.new_float()
+var array<float> sDownOnlyVals7pm = array.new_float()
+var array<float> sBothUpVals7pm = array.new_float()
+var array<float> sBothDownVals7pm = array.new_float()
+
+var array<float> sUpVals11pm = array.new_float()
+var array<float> sDownVals11pm = array.new_float()
+var array<float> sUpOnlyVals11pm = array.new_float()
+var array<float> sDownOnlyVals11pm = array.new_float()
+var array<float> sBothUpVals11pm = array.new_float()
+var array<float> sBothDownVals11pm = array.new_float()
+
+var array<float> sUpVals3am = array.new_float()
+var array<float> sDownVals3am = array.new_float()
+var array<float> sUpOnlyVals3am = array.new_float()
+var array<float> sDownOnlyVals3am = array.new_float()
+var array<float> sBothUpVals3am = array.new_float()
+var array<float> sBothDownVals3am = array.new_float()
+
+var array<float> sUpVals7am = array.new_float()
+var array<float> sDownVals7am = array.new_float()
+var array<float> sUpOnlyVals7am = array.new_float()
+var array<float> sDownOnlyVals7am = array.new_float()
+var array<float> sBothUpVals7am = array.new_float()
+var array<float> sBothDownVals7am = array.new_float()
+
+var array<float> sUpVals11am = array.new_float()
+var array<float> sDownVals11am = array.new_float()
+var array<float> sUpOnlyVals11am = array.new_float()
+var array<float> sDownOnlyVals11am = array.new_float()
+var array<float> sBothUpVals11am = array.new_float()
+var array<float> sBothDownVals11am = array.new_float()
+
+var array<float> sUpValsNight = array.new_float()
+var array<float> sDownValsNight = array.new_float()
+var array<float> sUpOnlyValsNight = array.new_float()
+var array<float> sDownOnlyValsNight = array.new_float()
+var array<float> sBothUpValsNight = array.new_float()
+var array<float> sBothDownValsNight = array.new_float()
+
+f_reset() =>
+    for b = 0 to 7 by 1
+        array.set(sSamples, b, 0)
+        array.set(sInside, b, 0)
+        array.set(sUpOnly, b, 0)
+        array.set(sDownOnly, b, 0)
+        array.set(sBoth, b, 0)
+        array.set(sUpSum, b, 0.0)
+        array.set(sDownSum, b, 0.0)
+        array.set(sUpMax, b, 0.0)
+        array.set(sDownMax, b, 0.0)
+        array.set(sUpOnlySum, b, 0.0)
+        array.set(sDownOnlySum, b, 0.0)
+        array.set(sBothUpSum, b, 0.0)
+        array.set(sBothDownSum, b, 0.0)
+        array.set(sUpOnlyMax, b, 0.0)
+        array.set(sDownOnlyMax, b, 0.0)
+        array.set(sBothUpMax, b, 0.0)
+        array.set(sBothDownMax, b, 0.0)
+    array.clear(sUpVals)
+    array.clear(sDownVals)
+    array.clear(sUpOnlyVals)
+    array.clear(sDownOnlyVals)
+    array.clear(sBothUpVals)
+    array.clear(sBothDownVals)
+    array.clear(sUpVals3pm)
+    array.clear(sDownVals3pm)
+    array.clear(sUpOnlyVals3pm)
+    array.clear(sDownOnlyVals3pm)
+    array.clear(sBothUpVals3pm)
+    array.clear(sBothDownVals3pm)
+    array.clear(sUpVals7pm)
+    array.clear(sDownVals7pm)
+    array.clear(sUpOnlyVals7pm)
+    array.clear(sDownOnlyVals7pm)
+    array.clear(sBothUpVals7pm)
+    array.clear(sBothDownVals7pm)
+    array.clear(sUpVals11pm)
+    array.clear(sDownVals11pm)
+    array.clear(sUpOnlyVals11pm)
+    array.clear(sDownOnlyVals11pm)
+    array.clear(sBothUpVals11pm)
+    array.clear(sBothDownVals11pm)
+    array.clear(sUpVals3am)
+    array.clear(sDownVals3am)
+    array.clear(sUpOnlyVals3am)
+    array.clear(sDownOnlyVals3am)
+    array.clear(sBothUpVals3am)
+    array.clear(sBothDownVals3am)
+    array.clear(sUpVals7am)
+    array.clear(sDownVals7am)
+    array.clear(sUpOnlyVals7am)
+    array.clear(sDownOnlyVals7am)
+    array.clear(sBothUpVals7am)
+    array.clear(sBothDownVals7am)
+    array.clear(sUpVals11am)
+    array.clear(sDownVals11am)
+    array.clear(sUpOnlyVals11am)
+    array.clear(sDownOnlyVals11am)
+    array.clear(sBothUpVals11am)
+    array.clear(sBothDownVals11am)
+    array.clear(sUpValsNight)
+    array.clear(sDownValsNight)
+    array.clear(sUpOnlyValsNight)
+    array.clear(sDownOnlyValsNight)
+    array.clear(sBothUpValsNight)
+    array.clear(sBothDownValsNight)
+
+f_add_bucket(int bucket, bool brokeUp, bool brokeDown, float upAmt, float downAmt, array<float> allUpArr, array<float> allDownArr, array<float> upOnlyArr, array<float> downOnlyArr, array<float> bothUpArr, array<float> bothDownArr) =>
+    array.set(sSamples, bucket, array.get(sSamples, bucket) + 1)
+    if brokeUp or brokeDown
+        if brokeUp and brokeDown
+            array.set(sBoth, bucket, array.get(sBoth, bucket) + 1)
+        else if brokeUp
+            array.set(sUpOnly, bucket, array.get(sUpOnly, bucket) + 1)
+        else
+            array.set(sDownOnly, bucket, array.get(sDownOnly, bucket) + 1)
+    else
+        array.set(sInside, bucket, array.get(sInside, bucket) + 1)
+    if brokeUp
+        array.set(sUpSum, bucket, array.get(sUpSum, bucket) + upAmt)
+        array.set(sUpMax, bucket, math.max(array.get(sUpMax, bucket), upAmt))
+        f_add(allUpArr, upAmt)
+    if brokeDown
+        array.set(sDownSum, bucket, array.get(sDownSum, bucket) + downAmt)
+        array.set(sDownMax, bucket, math.max(array.get(sDownMax, bucket), downAmt))
+        f_add(allDownArr, downAmt)
+    if brokeUp and not brokeDown
+        array.set(sUpOnlySum, bucket, array.get(sUpOnlySum, bucket) + upAmt)
+        array.set(sUpOnlyMax, bucket, math.max(array.get(sUpOnlyMax, bucket), upAmt))
+        f_add(upOnlyArr, upAmt)
+    if brokeDown and not brokeUp
+        array.set(sDownOnlySum, bucket, array.get(sDownOnlySum, bucket) + downAmt)
+        array.set(sDownOnlyMax, bucket, math.max(array.get(sDownOnlyMax, bucket), downAmt))
+        f_add(downOnlyArr, downAmt)
+    if brokeUp and brokeDown
+        array.set(sBothUpSum, bucket, array.get(sBothUpSum, bucket) + upAmt)
+        array.set(sBothDownSum, bucket, array.get(sBothDownSum, bucket) + downAmt)
+        array.set(sBothUpMax, bucket, math.max(array.get(sBothUpMax, bucket), upAmt))
+        array.set(sBothDownMax, bucket, math.max(array.get(sBothDownMax, bucket), downAmt))
+        f_add(bothUpArr, upAmt)
+        f_add(bothDownArr, downAmt)
+
+if barstate.islast
+    f_reset()
+    int startOffset = excludeActiveBar ? 1 : 0
+    int maxOffset = math.min(lookbackBars, math.max(bar_index - startOffset, 0))
+    if maxOffset > 0
+        for offset = startOffset to startOffset + maxOffset - 1 by 1
+            float prevHigh = high[offset + 1]
+            float prevLow = low[offset + 1]
+            float curHigh = high[offset]
+            float curLow = low[offset]
+            bool brokeUp = not na(prevHigh) and curHigh > prevHigh
+            bool brokeDown = not na(prevLow) and curLow < prevLow
+            float upAmt = brokeUp ? f_round_to_step(curHigh - prevHigh) : na
+            float downAmt = brokeDown ? f_round_to_step(prevLow - curLow) : na
+            f_add_bucket(0, brokeUp, brokeDown, upAmt, downAmt, sUpVals, sDownVals, sUpOnlyVals, sDownOnlyVals, sBothUpVals, sBothDownVals)
+            if f_is_exact_hour(time[offset], 15)
+                f_add_bucket(1, brokeUp, brokeDown, upAmt, downAmt, sUpVals3pm, sDownVals3pm, sUpOnlyVals3pm, sDownOnlyVals3pm, sBothUpVals3pm, sBothDownVals3pm)
+            if f_is_exact_hour(time[offset], 19)
+                f_add_bucket(2, brokeUp, brokeDown, upAmt, downAmt, sUpVals7pm, sDownVals7pm, sUpOnlyVals7pm, sDownOnlyVals7pm, sBothUpVals7pm, sBothDownVals7pm)
+            if f_is_exact_hour(time[offset], 23)
+                f_add_bucket(3, brokeUp, brokeDown, upAmt, downAmt, sUpVals11pm, sDownVals11pm, sUpOnlyVals11pm, sDownOnlyVals11pm, sBothUpVals11pm, sBothDownVals11pm)
+            if f_is_exact_hour(time[offset], 3)
+                f_add_bucket(4, brokeUp, brokeDown, upAmt, downAmt, sUpVals3am, sDownVals3am, sUpOnlyVals3am, sDownOnlyVals3am, sBothUpVals3am, sBothDownVals3am)
+            if f_is_exact_hour(time[offset], 7)
+                f_add_bucket(5, brokeUp, brokeDown, upAmt, downAmt, sUpVals7am, sDownVals7am, sUpOnlyVals7am, sDownOnlyVals7am, sBothUpVals7am, sBothDownVals7am)
+            if f_is_exact_hour(time[offset], 11)
+                f_add_bucket(6, brokeUp, brokeDown, upAmt, downAmt, sUpVals11am, sDownVals11am, sUpOnlyVals11am, sDownOnlyVals11am, sBothUpVals11am, sBothDownVals11am)
+            if f_is_11_3(time[offset])
+                f_add_bucket(7, brokeUp, brokeDown, upAmt, downAmt, sUpValsNight, sDownValsNight, sUpOnlyValsNight, sDownOnlyValsNight, sBothUpValsNight, sBothDownValsNight)
+
+var table t1 = table.new(position.top_right, 5, 11, border_width = 1, frame_color = borderCol, border_color = borderCol)
+var table t2 = table.new(position.middle_right, 5, 11, border_width = 1, frame_color = borderCol, border_color = borderCol)
+var table t3 = table.new(position.bottom_right, 5, 11, border_width = 1, frame_color = borderCol, border_color = borderCol)
+var table t4 = table.new(position.top_center, 5, 11, border_width = 1, frame_color = borderCol, border_color = borderCol)
+var table t5 = table.new(position.middle_center, 5, 11, border_width = 1, frame_color = borderCol, border_color = borderCol)
+var table t6 = table.new(position.bottom_center, 5, 11, border_width = 1, frame_color = borderCol, border_color = borderCol)
+var table t7 = table.new(position.top_left, 5, 11, border_width = 1, frame_color = borderCol, border_color = borderCol)
+var table t8 = table.new(position.middle_left, 5, 11, border_width = 1, frame_color = borderCol, border_color = borderCol)
+
+f_render(tableId, string subtitle, int bucket, array<float> upValsArr, array<float> downValsArr, array<float> upOnlyValsArr, array<float> downOnlyValsArr, array<float> bothUpValsArr, array<float> bothDownValsArr) =>
+    int samples = array.get(sSamples, bucket)
+    int insideCount = array.get(sInside, bucket)
+    int upOnlyCount = array.get(sUpOnly, bucket)
+    int downOnlyCount = array.get(sDownOnly, bucket)
+    int bothCount = array.get(sBoth, bucket)
+    int upCount = upOnlyCount + bothCount
+    int downCount = downOnlyCount + bothCount
+    f_cell(tableId, 0, 0, 'BREAKOUT STATS', headerBg, goldText, size.small)
+    f_cell(tableId, 1, 0, subtitle, headerBg, goldText, size.small)
+    f_cell(tableId, 2, 0, 'Count', headerBg, goldText, size.small)
+    f_cell(tableId, 3, 0, 'Average / Max', headerBg, goldText, size.small)
+    f_cell(tableId, 4, 0, 'Mode', headerBg, goldText, size.small)
+    f_cell(tableId, 0, 1, 'Bars studied', bodyBg2, goldText, size.small)
+    f_cell(tableId, 1, 1, str.tostring(samples), bodyBg2, whiteText, size.small)
+    f_cell(tableId, 2, 1, 'Total sample', bodyBg2, mutedText, size.tiny)
+    f_cell(tableId, 3, 1, 'Each bar vs prior bar', bodyBg2, mutedText, size.tiny)
+    f_cell(tableId, 4, 1, '-', bodyBg2, mutedText, size.tiny)
+    f_cell(tableId, 0, 2, 'Higher highs', bodyBg, goldText, size.small)
+    f_cell(tableId, 1, 2, f_count_pct(upCount, samples), bodyBg, whiteText, size.small)
+    f_cell(tableId, 2, 2, 'Any up break', bodyBg, mutedText, size.tiny)
+    f_cell(tableId, 3, 2, f_fmt_pts(f_avg_from_sum(array.get(sUpSum, bucket), upCount)) + ' / ' + f_fmt_pts(array.get(sUpMax, bucket)), bodyBg, whiteText, size.small)
+    f_cell(tableId, 4, 2, f_fmt_pts(f_mode(upValsArr)), bodyBg, whiteText, size.small)
+    f_cell(tableId, 0, 3, 'Lower lows', bodyBg, goldText, size.small)
+    f_cell(tableId, 1, 3, f_count_pct(downCount, samples), bodyBg, whiteText, size.small)
+    f_cell(tableId, 2, 3, 'Any down break', bodyBg, mutedText, size.tiny)
+    f_cell(tableId, 3, 3, f_fmt_pts(f_avg_from_sum(array.get(sDownSum, bucket), downCount)) + ' / ' + f_fmt_pts(array.get(sDownMax, bucket)), bodyBg, whiteText, size.small)
+    f_cell(tableId, 4, 3, f_fmt_pts(f_mode(downValsArr)), bodyBg, whiteText, size.small)
+    f_cell(tableId, 0, 4, 'No breakout', bodyBg, goldText, size.small)
+    f_cell(tableId, 1, 4, f_count_pct(insideCount, samples), bodyBg, whiteText, size.small)
+    f_cell(tableId, 2, 4, 'No HH / LL', bodyBg, mutedText, size.tiny)
+    f_cell(tableId, 3, 4, 'Stayed inside prior candle', bodyBg, mutedText, size.tiny)
+    f_cell(tableId, 4, 4, '-', bodyBg, mutedText, size.tiny)
+    f_cell(tableId, 0, 5, 'Up only', bodyBg2, goldText, size.small)
+    f_cell(tableId, 1, 5, f_count_pct(upOnlyCount, samples), bodyBg2, whiteText, size.small)
+    f_cell(tableId, 2, 5, 'Only higher high', bodyBg2, mutedText, size.tiny)
+    f_cell(tableId, 3, 5, f_fmt_pts(f_avg_from_sum(array.get(sUpOnlySum, bucket), upOnlyCount)) + ' / ' + f_fmt_pts(array.get(sUpOnlyMax, bucket)), bodyBg2, whiteText, size.small)
+    f_cell(tableId, 4, 5, f_fmt_pts(f_mode(upOnlyValsArr)), bodyBg2, whiteText, size.small)
+    f_cell(tableId, 0, 6, 'Down only', bodyBg2, goldText, size.small)
+    f_cell(tableId, 1, 6, f_count_pct(downOnlyCount, samples), bodyBg2, whiteText, size.small)
+    f_cell(tableId, 2, 6, 'Only lower low', bodyBg2, mutedText, size.tiny)
+    f_cell(tableId, 3, 6, f_fmt_pts(f_avg_from_sum(array.get(sDownOnlySum, bucket), downOnlyCount)) + ' / ' + f_fmt_pts(array.get(sDownOnlyMax, bucket)), bodyBg2, whiteText, size.small)
+    f_cell(tableId, 4, 6, f_fmt_pts(f_mode(downOnlyValsArr)), bodyBg2, whiteText, size.small)
+    f_cell(tableId, 0, 7, 'Both directions', bodyBg, goldText, size.small)
+    f_cell(tableId, 1, 7, f_count_pct(bothCount, samples), bodyBg, whiteText, size.small)
+    f_cell(tableId, 2, 7, 'Up and down', bodyBg, mutedText, size.tiny)
+    f_cell(tableId, 3, 7, 'See rows 8 and 9', bodyBg, mutedText, size.tiny)
+    f_cell(tableId, 4, 7, '-', bodyBg, mutedText, size.tiny)
+    f_cell(tableId, 0, 8, 'Both up amount', bodyBg2, goldText, size.small)
+    f_cell(tableId, 1, 8, f_count_pct(bothCount, samples), bodyBg2, whiteText, size.small)
+    f_cell(tableId, 2, 8, 'Same both bars', bodyBg2, mutedText, size.tiny)
+    f_cell(tableId, 3, 8, f_fmt_pts(f_avg_from_sum(array.get(sBothUpSum, bucket), bothCount)) + ' / ' + f_fmt_pts(array.get(sBothUpMax, bucket)), bodyBg2, whiteText, size.small)
+    f_cell(tableId, 4, 8, f_fmt_pts(f_mode(bothUpValsArr)), bodyBg2, whiteText, size.small)
+    f_cell(tableId, 0, 9, 'Both down amount', bodyBg2, goldText, size.small)
+    f_cell(tableId, 1, 9, f_count_pct(bothCount, samples), bodyBg2, whiteText, size.small)
+    f_cell(tableId, 2, 9, 'Same both bars', bodyBg2, mutedText, size.tiny)
+    f_cell(tableId, 3, 9, f_fmt_pts(f_avg_from_sum(array.get(sBothDownSum, bucket), bothCount)) + ' / ' + f_fmt_pts(array.get(sBothDownMax, bucket)), bodyBg2, whiteText, size.small)
+    f_cell(tableId, 4, 9, f_fmt_pts(f_mode(bothDownValsArr)), bodyBg2, whiteText, size.small)
+    f_cell(tableId, 0, 10, 'Meaning', bodyBg2, goldText, size.small)
+    f_cell(tableId, 1, 10, 'Avg / Max / Mode', bodyBg2, whiteText, size.small)
+    f_cell(tableId, 2, 10, 'Break size only', bodyBg2, mutedText, size.tiny)
+    f_cell(tableId, 3, 10, 'Measured in pointSize units', bodyBg2, mutedText, size.tiny)
+    f_cell(tableId, 4, 10, '-', bodyBg2, mutedText, size.tiny)
+
+if barstate.islast and showAllTable
+    f_render(t1, 'All bars', 0, sUpVals, sDownVals, sUpOnlyVals, sDownOnlyVals, sBothUpVals, sBothDownVals)
+
+if barstate.islast and show3pmTable
+    f_render(t2, '3pm only', 1, sUpVals3pm, sDownVals3pm, sUpOnlyVals3pm, sDownOnlyVals3pm, sBothUpVals3pm, sBothDownVals3pm)
+
+if barstate.islast and show7pmTable
+    f_render(t3, '7pm only', 2, sUpVals7pm, sDownVals7pm, sUpOnlyVals7pm, sDownOnlyVals7pm, sBothUpVals7pm, sBothDownVals7pm)
+
+if barstate.islast and show11pmTable
+    f_render(t4, '11pm only', 3, sUpVals11pm, sDownVals11pm, sUpOnlyVals11pm, sDownOnlyVals11pm, sBothUpVals11pm, sBothDownVals11pm)
+
+if barstate.islast and show3amTable
+    f_render(t5, '3am only', 4, sUpVals3am, sDownVals3am, sUpOnlyVals3am, sDownOnlyVals3am, sBothUpVals3am, sBothDownVals3am)
+
+if barstate.islast and show7amTable
+    f_render(t6, '7am only', 5, sUpVals7am, sDownVals7am, sUpOnlyVals7am, sDownOnlyVals7am, sBothUpVals7am, sBothDownVals7am)
+
+if barstate.islast and show11amTable
+    f_render(t7, '11am only', 6, sUpVals11am, sDownVals11am, sUpOnlyVals11am, sDownOnlyVals11am, sBothUpVals11am, sBothDownVals11am)
+
+if barstate.islast and showNightTable
+    f_render(t8, '11pm / 3am combined', 7, sUpValsNight, sDownValsNight, sUpOnlyValsNight, sDownOnlyValsNight, sBothUpValsNight, sBothDownValsNight)
