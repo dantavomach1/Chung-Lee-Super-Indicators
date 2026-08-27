@@ -1,4 +1,4 @@
-name: Temporary MGC 15m Signal Robustness
+name: Temporary MGC Exit Sauce
 on:
   push:
     branches:
@@ -13,12 +13,12 @@ jobs:
         uses: actions/checkout@v4
       - name: Clone public MGC historical data
         run: git clone --depth 1 https://github.com/domzack/mgc-ohlcv-data.git /tmp/mgc-ohlcv-data
-      - name: Run 15m signal robustness holdout check
-        run: python3 research/mgc_15m_signal_robustness.py /tmp/mgc-ohlcv-data
+      - name: Run delayed-trail and asymmetric exit diagnostics
+        run: python3 research/mgc_exit_sauce.py /tmp/mgc-ohlcv-data
       - name: Upload results
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: mgc-15m-signal-robustness
+          name: mgc-exit-sauce
           path: backtest_output/
           if-no-files-found: warn
