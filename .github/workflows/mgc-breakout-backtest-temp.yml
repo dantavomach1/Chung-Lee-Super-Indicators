@@ -1,4 +1,4 @@
-name: Temporary MGC Exit Sauce
+name: Temporary MGC Pullback Entry Sweep
 on:
   push:
     branches:
@@ -13,12 +13,12 @@ jobs:
         uses: actions/checkout@v4
       - name: Clone public MGC historical data
         run: git clone --depth 1 https://github.com/domzack/mgc-ohlcv-data.git /tmp/mgc-ohlcv-data
-      - name: Run delayed-trail and asymmetric exit diagnostics
-        run: python3 research/mgc_exit_sauce.py /tmp/mgc-ohlcv-data
+      - name: Run pullback entry timing sweep
+        run: python3 research/mgc_pullback_entry_sweep.py /tmp/mgc-ohlcv-data
       - name: Upload results
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: mgc-exit-sauce
+          name: mgc-pullback-entry-sweep
           path: backtest_output/
           if-no-files-found: warn
