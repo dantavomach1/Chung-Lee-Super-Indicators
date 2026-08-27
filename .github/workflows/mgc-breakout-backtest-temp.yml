@@ -1,4 +1,4 @@
-name: Temporary MGC Hourly Breakout Backtest
+name: Temporary MGC 15m MACD Stochastic Sweep
 on:
   push:
     branches:
@@ -13,12 +13,12 @@ jobs:
         uses: actions/checkout@v4
       - name: Clone public MGC historical data
         run: git clone --depth 1 https://github.com/domzack/mgc-ohlcv-data.git /tmp/mgc-ohlcv-data
-      - name: Run RSI threshold sensitivity
-        run: python3 research/mgc_breakout_rsi_thresholds.py /tmp/mgc-ohlcv-data
+      - name: Run 15m mid-slow MACD stochastic sweep
+        run: python3 research/mgc_15m_mid_slow_stoch_sweep.py /tmp/mgc-ohlcv-data
       - name: Upload results
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: mgc-breakout-rsi-thresholds
+          name: mgc-15m-mid-slow-stoch-sweep
           path: backtest_output/
           if-no-files-found: warn
