@@ -23,10 +23,15 @@ jobs:
           python3 research/mgc_breakout_diagnostics.py /tmp/mgc-ohlcv-data
           mv backtest_output/results.json backtest_output/diagnostic_results.json
           mv backtest_output/summary.csv backtest_output/diagnostic_summary.csv
+      - name: Run RSI lookback diagnostics
+        run: |
+          python3 research/mgc_breakout_rsi_lookback.py /tmp/mgc-ohlcv-data
+          mv backtest_output/results.json backtest_output/rsi_lookback_results.json
+          mv backtest_output/summary.csv backtest_output/rsi_lookback_summary.csv
       - name: Upload results
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: mgc-breakout-backtest-results-v2
+          name: mgc-breakout-backtest-results-v3
           path: backtest_output/
           if-no-files-found: warn
