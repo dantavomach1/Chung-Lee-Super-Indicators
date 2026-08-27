@@ -1,4 +1,4 @@
-name: Temporary MGC Pullback Robustness
+name: Temporary Cross Market TF Sweep
 on:
   push:
     branches:
@@ -7,18 +7,20 @@ on:
 jobs:
   backtest:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 45
     steps:
       - name: Checkout research branch
         uses: actions/checkout@v4
-      - name: Clone public MGC historical data
+      - name: Clone public TopstepX multi-market data
+        run: git clone --depth 1 https://github.com/axb0306/cme-futures-ohlc.git /tmp/cme-futures-ohlc
+      - name: Clone deep public MGC Databento data
         run: git clone --depth 1 https://github.com/domzack/mgc-ohlcv-data.git /tmp/mgc-ohlcv-data
-      - name: Run pullback robustness grid
-        run: python3 research/mgc_pullback_robustness.py /tmp/mgc-ohlcv-data
+      - name: Run cross-market/timeframe sweep
+        run: python3 research/cross_market_tf_sweep.py /tmp/cme-futures-ohlc /tmp/mgc-ohlcv-data
       - name: Upload results
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: mgc-pullback-robustness
+          name: cross-market-tf-sweep
           path: backtest_output/
           if-no-files-found: warn
