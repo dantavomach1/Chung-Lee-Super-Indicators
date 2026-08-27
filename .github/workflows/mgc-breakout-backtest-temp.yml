@@ -13,12 +13,20 @@ jobs:
         uses: actions/checkout@v4
       - name: Clone public MGC historical data
         run: git clone --depth 1 https://github.com/domzack/mgc-ohlcv-data.git /tmp/mgc-ohlcv-data
-      - name: Run backtest
-        run: python3 research/mgc_hourly_breakout_backtest.py /tmp/mgc-ohlcv-data
+      - name: Run primary backtest
+        run: |
+          python3 research/mgc_hourly_breakout_backtest.py /tmp/mgc-ohlcv-data
+          cp backtest_output/results.json backtest_output/primary_results.json
+          cp backtest_output/summary.csv backtest_output/primary_summary.csv
+      - name: Run interpretation diagnostics
+        run: |
+          python3 research/mgc_breakout_diagnostics.py /tmp/mgc-ohlcv-data
+          mv backtest_output/results.json backtest_output/diagnostic_results.json
+          mv backtest_output/summary.csv backtest_output/diagnostic_summary.csv
       - name: Upload results
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: mgc-breakout-backtest-results
+          name: mgc-breakout-backtest-results-v2
           path: backtest_output/
           if-no-files-found: warn
